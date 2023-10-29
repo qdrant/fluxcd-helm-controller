@@ -4,12 +4,9 @@ import (
 	"context"
 	"time"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta1"
+	runtimeClient "github.com/fluxcd/pkg/runtime/client"
 	helper "github.com/fluxcd/pkg/runtime/controller"
 	"github.com/fluxcd/pkg/runtime/events"
-	"github.com/fluxcd/pkg/runtime/metrics"
-
-	runtimeClient "github.com/fluxcd/pkg/runtime/client"
 	"sigs.k8s.io/cli-utils/pkg/kstatus/polling"
 	"sigs.k8s.io/controller-runtime/pkg/ratelimiter"
 
@@ -23,6 +20,7 @@ type HelmReleaseAdapter struct {
 	KubeConfigOpts      runtimeClient.KubeConfigOptions
 	ReconcilerOptions   HelmReleaseReconcilerOption
 	ControllerName      string
+	MetricOptions       helper.Metrics
 }
 
 type HelmReleaseReconcilerOption struct {
@@ -39,15 +37,13 @@ func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmRel
 		return err
 	}
 
-	metricsH := helper.NewMetrics(mgr, metrics.MustMakeRecorder(), v2.HelmReleaseFinalizer)
-
 	pollingOpts := polling.Options{}
 	hr := &controller.HelmReleaseReconciler{
 		Client:              mgr.GetClient(),
 		Config:              mgr.GetConfig(),
 		Scheme:              mgr.GetScheme(),
 		EventRecorder:       eventRecorder,
-		Metrics:             metricsH,
+		Metrics:             adapter.MetricOptions,
 		NoCrossNamespaceRef: adapter.NoCrossNamespaceRef,
 		ClientOpts:          adapter.ClientOpts,
 		KubeConfigOpts:      adapter.KubeConfigOpts,
