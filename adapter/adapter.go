@@ -17,10 +17,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-const (
-	controllerName = "helm-controller"
-)
-
 type HelmReleaseAdapter struct {
 	NoCrossNamespaceRef bool
 	ClientOpts          runtimeClient.Options
@@ -39,7 +35,7 @@ func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmRel
 	var eventRecorder *events.Recorder
 	var err error
 
-	if eventRecorder, err = events.NewRecorder(mgr, mgr.GetLogger(), "", controllerName); err != nil {
+	if eventRecorder, err = events.NewRecorder(mgr, mgr.GetLogger(), "", adapter.ControllerName); err != nil {
 		return err
 	}
 
@@ -57,7 +53,7 @@ func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmRel
 		KubeConfigOpts:      adapter.KubeConfigOpts,
 		PollingOpts:         pollingOpts,
 		StatusPoller:        polling.NewStatusPoller(mgr.GetClient(), mgr.GetRESTMapper(), pollingOpts),
-		ControllerName:      controllerName,
+		ControllerName:      adapter.ControllerName,
 	}
 	return hr.SetupWithManager(ctx, mgr, controller.HelmReleaseReconcilerOptions{
 		DependencyRequeueInterval: adapter.ReconcilerOptions.DependencyRequeueInterval,
