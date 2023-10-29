@@ -10,8 +10,6 @@ import (
 	"github.com/fluxcd/pkg/runtime/metrics"
 
 	runtimeClient "github.com/fluxcd/pkg/runtime/client"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/cli-utils/pkg/kstatus/polling"
 	"sigs.k8s.io/controller-runtime/pkg/ratelimiter"
 
@@ -24,15 +22,11 @@ const (
 )
 
 type HelmReleaseAdapter struct {
-	Config              *rest.Config
-	Scheme              *runtime.Scheme
 	NoCrossNamespaceRef bool
 	ClientOpts          runtimeClient.Options
 	KubeConfigOpts      runtimeClient.KubeConfigOptions
-	StatusPoller        *polling.StatusPoller
-	PollingOpts         polling.Options
-	ControllerName      string
 	ReconcilerOptions   HelmReleaseReconcilerOption
+	ControllerName      string
 }
 
 type HelmReleaseReconcilerOption struct {
