@@ -31,7 +31,7 @@ import (
 )
 
 const HelmReleaseKind = "HelmRelease"
-const HelmReleaseFinalizer = "finalizers.fluxcd.io"
+const HelmReleaseFinalizer = "finalizers.qdrant.io"
 
 // Kustomize Helm PostRenderer specification.
 type Kustomize struct {

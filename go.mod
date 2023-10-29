@@ -10,6 +10,7 @@ replace github.com/opencontainers/go-digest => github.com/opencontainers/go-dige
 
 // Pin kustomize to v5.0.3
 replace (
+	github.com/fluxcd/source-controller => github.com/qdrant/fluxcd-source-controller v0.0.0-20231029094440-c3e6d972a8c9
 	sigs.k8s.io/kustomize/api => sigs.k8s.io/kustomize/api v0.13.4
 	sigs.k8s.io/kustomize/kyaml => sigs.k8s.io/kustomize/kyaml v0.14.2
 )
