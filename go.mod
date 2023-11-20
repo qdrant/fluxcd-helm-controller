@@ -2,7 +2,10 @@ module github.com/fluxcd/helm-controller
 
 go 1.20
 
-replace github.com/fluxcd/helm-controller/api => ./api
+replace (
+	github.com/fluxcd/helm-controller/api => ./api
+	github.com/fluxcd/helm-controller/internal => ./internal
+)
 
 // Replace digest lib to master to gather access to BLAKE3.
 // xref: https://github.com/opencontainers/go-digest/pull/66
@@ -10,6 +13,7 @@ replace github.com/opencontainers/go-digest => github.com/opencontainers/go-dige
 
 // Pin kustomize to v5.0.3
 replace (
+	github.com/fluxcd/source-controller/api => github.com/qdrant/fluxcd-source-controller/api v0.0.0-20231120092752-09d48e6cc2b5
 	sigs.k8s.io/kustomize/api => sigs.k8s.io/kustomize/api v0.13.4
 	sigs.k8s.io/kustomize/kyaml => sigs.k8s.io/kustomize/kyaml v0.14.2
 )

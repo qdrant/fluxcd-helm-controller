@@ -49,17 +49,17 @@ func Test_postRendererOriginLabels_Run(t *testing.T) {
 kind: Pod
 metadata:
   labels:
-    helm.toolkit.fluxcd.io/name: name
-    helm.toolkit.fluxcd.io/namespace: namespace
+    cd.qdrant.io/name: name
+    cd.qdrant.io/namespace: namespace
   name: pod-without-labels
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
+    cd.qdrant.io/name: name
+    cd.qdrant.io/namespace: namespace
     existing: label
-    helm.toolkit.fluxcd.io/name: name
-    helm.toolkit.fluxcd.io/namespace: namespace
   name: service-with-labels
 `,
 		},
