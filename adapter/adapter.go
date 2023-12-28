@@ -21,6 +21,7 @@ type HelmReleaseAdapter struct {
 	ReconcilerOptions   HelmReleaseReconcilerOption
 	ControllerName      string
 	MetricOptions       helper.Metrics
+	LeaderElection      *bool
 }
 
 type HelmReleaseReconcilerOption struct {
@@ -50,6 +51,7 @@ func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmRel
 		PollingOpts:         pollingOpts,
 		StatusPoller:        polling.NewStatusPoller(mgr.GetClient(), mgr.GetRESTMapper(), pollingOpts),
 		ControllerName:      adapter.ControllerName,
+		LeaderElection:      adapter.LeaderElection,
 	}
 	return hr.SetupWithManager(ctx, mgr, controller.HelmReleaseReconcilerOptions{
 		DependencyRequeueInterval: adapter.ReconcilerOptions.DependencyRequeueInterval,

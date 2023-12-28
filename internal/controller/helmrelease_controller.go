@@ -89,6 +89,7 @@ type HelmReleaseReconciler struct {
 	StatusPoller        *polling.StatusPoller
 	PollingOpts         polling.Options
 	ControllerName      string
+	LeaderElection      *bool
 
 	httpClient        *retryablehttp.Client
 	requeueDependency time.Duration
@@ -128,7 +129,8 @@ func (r *HelmReleaseReconciler) SetupWithManager(ctx context.Context, mgr ctrl.M
 			builder.WithPredicates(SourceRevisionChangePredicate{}),
 		).
 		WithOptions(controller.Options{
-			RateLimiter: opts.RateLimiter,
+			RateLimiter:        opts.RateLimiter,
+			NeedLeaderElection: r.LeaderElection,
 		}).
 		Complete(r)
 }
