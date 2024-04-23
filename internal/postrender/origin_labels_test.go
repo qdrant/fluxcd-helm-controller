@@ -18,9 +18,8 @@ package postrender
 
 import (
 	"bytes"
-	"testing"
-
 	. "github.com/onsi/gomega"
+	"testing"
 )
 
 const mixedResourceMock = `apiVersion: v1
@@ -50,17 +49,17 @@ func Test_OriginLabels_Run(t *testing.T) {
 kind: Pod
 metadata:
   labels:
-    helm.toolkit.fluxcd.io/name: name
-    helm.toolkit.fluxcd.io/namespace: namespace
+    cd.qdrant.io/name: name
+    cd.qdrant.io/namespace: namespace
   name: pod-without-labels
 ---
 apiVersion: v1
 kind: Service
 metadata:
   labels:
+    cd.qdrant.io/name: name
+    cd.qdrant.io/namespace: namespace
     existing: label
-    helm.toolkit.fluxcd.io/name: name
-    helm.toolkit.fluxcd.io/namespace: namespace
   name: service-with-labels
 `,
 		},
@@ -69,7 +68,7 @@ metadata:
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			k := NewOriginLabels("helm.toolkit.fluxcd.io", "namespace", "name")
+			k := NewOriginLabels("cd.qdrant.io", "namespace", "name")
 			gotModifiedManifests, err := k.Run(bytes.NewBufferString(tt.renderedManifests))
 			if tt.expectErr {
 				g.Expect(err).To(HaveOccurred())
