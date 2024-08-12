@@ -28,7 +28,7 @@ import (
 
 	"github.com/fluxcd/pkg/runtime/conditions"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/release"
 	"github.com/fluxcd/helm-controller/internal/storage"
@@ -41,7 +41,7 @@ import (
 // This write to the Helm storage is observed, and updates the Status.History
 // field if the persisted object targets the same release version.
 //
-// Any pending state marks the v2beta2.HelmRelease object with
+// Any pending state marks the v2.HelmRelease object with
 // ReleasedCondition=False, even if persisting the object to the Helm storage
 // fails.
 //
@@ -114,12 +114,12 @@ func (r *Unlock) failure(req *Request, cur *v2.Snapshot, status helmrelease.Stat
 
 	// Mark unlock failure on object.
 	req.Object.Status.Failures++
-	conditions.MarkFalse(req.Object, v2.ReleasedCondition, "PendingRelease", msg)
+	conditions.MarkFalse(req.Object, v2.ReleasedCondition, "PendingRelease", "%s", msg)
 
 	// Record warning event.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
-		eventMeta(cur.ChartVersion, cur.ConfigDigest, addOCIDigest(cur.OCIDigest)),
+		eventMeta(cur.ChartVersion, cur.ConfigDigest, addAppVersion(cur.AppVersion), addOCIDigest(cur.OCIDigest)),
 		corev1.EventTypeWarning,
 		"PendingRelease",
 		msg,
@@ -133,12 +133,12 @@ func (r *Unlock) success(req *Request, cur *v2.Snapshot, status helmrelease.Stat
 	msg := fmt.Sprintf(fmtUnlockSuccess, cur.FullReleaseName(), cur.VersionedChartName(), status.String())
 
 	// Mark unlock success on object.
-	conditions.MarkFalse(req.Object, v2.ReleasedCondition, "PendingRelease", msg)
+	conditions.MarkFalse(req.Object, v2.ReleasedCondition, "PendingRelease", "%s", msg)
 
 	// Record event.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
-		eventMeta(cur.ChartVersion, cur.ConfigDigest, addOCIDigest(cur.OCIDigest)),
+		eventMeta(cur.ChartVersion, cur.ConfigDigest, addAppVersion(cur.AppVersion), addOCIDigest(cur.OCIDigest)),
 		corev1.EventTypeNormal,
 		"PendingRelease",
 		msg,

@@ -29,7 +29,7 @@ import (
 	"github.com/fluxcd/pkg/runtime/conditions"
 	"github.com/fluxcd/pkg/runtime/logger"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/release"
 )
@@ -148,13 +148,13 @@ func (r *UninstallRemediation) failure(req *Request, buffer *action.LogBuffer, e
 
 	// Mark uninstall failure on object.
 	req.Object.Status.Failures++
-	conditions.MarkFalse(req.Object, v2.RemediatedCondition, v2.UninstallFailedReason, msg)
+	conditions.MarkFalse(req.Object, v2.RemediatedCondition, v2.UninstallFailedReason, "%s", msg)
 
 	// Record warning event, this message contains more data than the
 	// Condition summary.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
-		eventMeta(cur.ChartVersion, cur.ConfigDigest, addOCIDigest(cur.OCIDigest)),
+		eventMeta(cur.ChartVersion, cur.ConfigDigest, addAppVersion(cur.AppVersion), addOCIDigest(cur.OCIDigest)),
 		corev1.EventTypeWarning,
 		v2.UninstallFailedReason,
 		eventMessageWithLog(msg, buffer),
@@ -170,12 +170,12 @@ func (r *UninstallRemediation) success(req *Request) {
 	msg := fmt.Sprintf(fmtUninstallRemediationSuccess, cur.FullReleaseName(), cur.VersionedChartName())
 
 	// Mark remediation success on object.
-	conditions.MarkTrue(req.Object, v2.RemediatedCondition, v2.UninstallSucceededReason, msg)
+	conditions.MarkTrue(req.Object, v2.RemediatedCondition, v2.UninstallSucceededReason, "%s", msg)
 
 	// Record event.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
-		eventMeta(cur.ChartVersion, cur.ConfigDigest, addOCIDigest(cur.OCIDigest)),
+		eventMeta(cur.ChartVersion, cur.ConfigDigest, addAppVersion(cur.AppVersion), addOCIDigest(cur.OCIDigest)),
 		corev1.EventTypeNormal,
 		v2.UninstallSucceededReason,
 		msg,

@@ -21,17 +21,21 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fluxcd/pkg/apis/meta"
+	"github.com/fluxcd/pkg/runtime/conditions"
 	"github.com/fluxcd/pkg/ssa/jsondiff"
 	"helm.sh/helm/v3/pkg/kube"
 	helmrelease "helm.sh/helm/v3/pkg/release"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/fluxcd/helm-controller/internal/action"
+	"github.com/fluxcd/helm-controller/internal/digest"
 	interrors "github.com/fluxcd/helm-controller/internal/errors"
+	"github.com/fluxcd/helm-controller/internal/postrender"
 )
 
 // ReleaseStatus represents the status of a Helm release as determined by
-// comparing the Helm storage with the v2beta2.HelmRelease object.
+// comparing the Helm storage with the v2.HelmRelease object.
 type ReleaseStatus string
 
 // String returns the string representation of the release status.
@@ -47,10 +51,10 @@ const (
 	// Helm storage.
 	ReleaseStatusAbsent ReleaseStatus = "Absent"
 	// ReleaseStatusUnmanaged indicates that the release is present in the Helm
-	// storage, but is not managed by the v2beta2.HelmRelease object.
+	// storage, but is not managed by the v2.HelmRelease object.
 	ReleaseStatusUnmanaged ReleaseStatus = "Unmanaged"
 	// ReleaseStatusOutOfSync indicates that the release is present in the Helm
-	// storage, but is not in sync with the v2beta2.HelmRelease object.
+	// storage, but is not in sync with the v2.HelmRelease object.
 	ReleaseStatusOutOfSync ReleaseStatus = "OutOfSync"
 	// ReleaseStatusDrifted indicates that the release is present in the Helm
 	// storage, but the cluster state has drifted from the manifest in the
@@ -63,7 +67,7 @@ const (
 	// storage, but has not been tested.
 	ReleaseStatusUntested ReleaseStatus = "Untested"
 	// ReleaseStatusInSync indicates that the release is present in the Helm
-	// storage, and is in sync with the v2beta2.HelmRelease object.
+	// storage, and is in sync with the v2.HelmRelease object.
 	ReleaseStatusInSync ReleaseStatus = "InSync"
 	// ReleaseStatusFailed indicates that the release is present in the Helm
 	// storage, but has failed.
@@ -71,7 +75,7 @@ const (
 )
 
 // ReleaseState represents the state of a Helm release as determined by
-// comparing the Helm storage with the v2beta2.HelmRelease object.
+// comparing the Helm storage with the v2.HelmRelease object.
 type ReleaseState struct {
 	// Status is the status of the release.
 	Status ReleaseStatus
@@ -83,7 +87,7 @@ type ReleaseState struct {
 }
 
 // DetermineReleaseState determines the state of the Helm release as compared
-// to the v2beta2.HelmRelease object. It returns a ReleaseState that indicates
+// to the v2.HelmRelease object. It returns a ReleaseState that indicates
 // the status of the release, and an error if the state could not be determined.
 func DetermineReleaseState(ctx context.Context, cfg *action.ConfigFactory, req *Request) (ReleaseState, error) {
 	rls, err := action.LastRelease(cfg.Build(nil), req.Object.GetReleaseName())
@@ -138,6 +142,24 @@ func DetermineReleaseState(ctx context.Context, cfg *action.ConfigFactory, req *
 				return ReleaseState{Status: ReleaseStatusOutOfSync, Reason: err.Error()}, nil
 			default:
 				return ReleaseState{Status: ReleaseStatusUnknown}, err
+			}
+		}
+
+		// Verify if postrender digest has changed if config has not been
+		// processed. For the processed or partially processed generation, the
+		// updated observation will only be reflected at the end of a successful
+		// reconciliation.  Comparing here would result the reconciliation to
+		// get stuck in this check due to a mismatch forever.  The value can't
+		// change without a new generation. Hence, compare the observed digest
+		// for new generations only.
+		ready := conditions.Get(req.Object, meta.ReadyCondition)
+		if ready != nil && ready.ObservedGeneration != req.Object.Generation {
+			var postrenderersDigest string
+			if req.Object.Spec.PostRenderers != nil {
+				postrenderersDigest = postrender.Digest(digest.Canonical, req.Object.Spec.PostRenderers).String()
+			}
+			if postrenderersDigest != req.Object.Status.ObservedPostRenderersDigest {
+				return ReleaseState{Status: ReleaseStatusOutOfSync, Reason: "postrenderers digest has changed"}, nil
 			}
 		}
 

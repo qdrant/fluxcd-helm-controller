@@ -26,7 +26,7 @@ import (
 	helmrelease "helm.sh/helm/v3/pkg/release"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/release"
 	"github.com/fluxcd/helm-controller/internal/storage"
@@ -137,6 +137,8 @@ func observeRelease(observed observedReleases) storage.ObserveFunc {
 // tests are not enabled, and excluding it when failures must be ignored.
 //
 // If Ready=True, any Stalled condition is removed.
+//
+// The ObservedPostRenderersDigest is updated if the post-renderers exist.
 func summarize(req *Request) {
 	var sumConds = []string{v2.RemediatedCondition, v2.ReleasedCondition}
 	if req.Object.GetTest().Enable && !req.Object.GetTest().IgnoreFailures {
@@ -200,8 +202,13 @@ func eventMessageWithLog(msg string, log *action.LogBuffer) string {
 // addMeta is a function that adds metadata to an event map.
 type addMeta func(map[string]string)
 
-// metaOCIDigestKey is the key for the OCI digest metadata.
-const metaOCIDigestKey = "oci-digest"
+const (
+	// metaOCIDigestKey is the key for the chart OCI artifact digest.
+	metaOCIDigestKey = "oci-digest"
+
+	// metaAppVersionKey is the key for the app version found in chart metadata.
+	metaAppVersionKey = "app-version"
+)
 
 // eventMeta returns the event (annotation) metadata based on the given
 // parameters.
@@ -231,6 +238,17 @@ func addOCIDigest(digest string) addMeta {
 				m = make(map[string]string)
 			}
 			m[eventMetaGroupKey(metaOCIDigestKey)] = digest
+		}
+	}
+}
+
+func addAppVersion(appVersion string) addMeta {
+	return func(m map[string]string) {
+		if appVersion != "" {
+			if m == nil {
+				m = make(map[string]string)
+			}
+			m[eventMetaGroupKey(metaAppVersionKey)] = appVersion
 		}
 	}
 }

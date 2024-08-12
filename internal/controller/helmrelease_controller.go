@@ -55,10 +55,10 @@ import (
 	"github.com/fluxcd/pkg/runtime/object"
 	"github.com/fluxcd/pkg/runtime/patch"
 	"github.com/fluxcd/pkg/runtime/predicates"
-	source "github.com/fluxcd/source-controller/api/v1"
-	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	sourcev1beta2 "github.com/fluxcd/source-controller/api/v1beta2"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	intacl "github.com/fluxcd/helm-controller/internal/acl"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/chartutil"
@@ -67,6 +67,7 @@ import (
 	"github.com/fluxcd/helm-controller/internal/features"
 	"github.com/fluxcd/helm-controller/internal/kube"
 	"github.com/fluxcd/helm-controller/internal/loader"
+	"github.com/fluxcd/helm-controller/internal/postrender"
 	intpredicates "github.com/fluxcd/helm-controller/internal/predicates"
 	intreconcile "github.com/fluxcd/helm-controller/internal/reconcile"
 	"github.com/fluxcd/helm-controller/internal/release"
@@ -140,7 +141,7 @@ func (r *HelmReleaseReconciler) SetupWithManager(ctx context.Context, mgr ctrl.M
 			builder.WithPredicates(intpredicates.SourceRevisionChangePredicate{}),
 		).
 		Watches(
-			&sourcev1.OCIRepository{},
+			&sourcev1beta2.OCIRepository{},
 			handler.EnqueueRequestsFromMapFunc(r.requestsForOCIRrepositoryChange),
 			builder.WithPredicates(intpredicates.SourceRevisionChangePredicate{}),
 		).
@@ -253,7 +254,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 		if err := r.checkDependencies(ctx, obj); err != nil {
 			msg := fmt.Sprintf("dependencies do not meet ready condition (%s): retrying in %s",
 				err.Error(), r.requeueDependency.String())
-			conditions.MarkFalse(obj, meta.ReadyCondition, v2.DependencyNotReadyReason, err.Error())
+			conditions.MarkFalse(obj, meta.ReadyCondition, v2.DependencyNotReadyReason, "%s", err)
 			r.Eventf(obj, corev1.EventTypeNormal, v2.DependencyNotReadyReason, err.Error())
 			log.Info(msg)
 
@@ -273,8 +274,8 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 	source, err := r.getSource(ctx, obj)
 	if err != nil {
 		if acl.IsAccessDenied(err) {
-			conditions.MarkStalled(obj, aclv1.AccessDeniedReason, err.Error())
-			conditions.MarkFalse(obj, meta.ReadyCondition, aclv1.AccessDeniedReason, err.Error())
+			conditions.MarkStalled(obj, aclv1.AccessDeniedReason, "%s", err)
+			conditions.MarkFalse(obj, meta.ReadyCondition, aclv1.AccessDeniedReason, "%s", err)
 			conditions.Delete(obj, meta.ReconcilingCondition)
 			r.Eventf(obj, corev1.EventTypeWarning, aclv1.AccessDeniedReason, err.Error())
 
@@ -285,7 +286,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 		}
 
 		msg := fmt.Sprintf("could not get Source object: %s", err.Error())
-		conditions.MarkFalse(obj, meta.ReadyCondition, v2.ArtifactFailedReason, msg)
+		conditions.MarkFalse(obj, meta.ReadyCondition, v2.ArtifactFailedReason, "%s", msg)
 		return ctrl.Result{}, err
 	}
 	// Remove any stale corresponding Ready=False condition with Unknown.
@@ -296,7 +297,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 	// Check if the source is ready.
 	if ready, msg := isSourceReady(source); !ready {
 		log.Info(msg)
-		conditions.MarkFalse(obj, meta.ReadyCondition, "SourceNotReady", msg)
+		conditions.MarkFalse(obj, meta.ReadyCondition, "SourceNotReady", "%s", msg)
 		// Do not requeue immediately, when the artifact is created
 		// the watcher should trigger a reconciliation.
 		return jitter.JitteredRequeueInterval(ctrl.Result{RequeueAfter: obj.GetRequeueAfter()}), errWaitForChart
@@ -309,7 +310,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 	// Compose values based from the spec and references.
 	values, err := chartutil.ChartValuesFromReferences(ctx, r.Client, obj.Namespace, obj.GetValues(), obj.Spec.ValuesFrom...)
 	if err != nil {
-		conditions.MarkFalse(obj, meta.ReadyCondition, "ValuesError", err.Error())
+		conditions.MarkFalse(obj, meta.ReadyCondition, "ValuesError", "%s", err)
 		r.Eventf(obj, corev1.EventTypeWarning, "ValuesError", err.Error())
 		return ctrl.Result{}, err
 	}
@@ -323,12 +324,12 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 	if err != nil {
 		if errors.Is(err, loader.ErrFileNotFound) {
 			msg := fmt.Sprintf("Source not ready: artifact not found. Retrying in %s", r.requeueDependency.String())
-			conditions.MarkFalse(obj, meta.ReadyCondition, v2.ArtifactFailedReason, msg)
+			conditions.MarkFalse(obj, meta.ReadyCondition, v2.ArtifactFailedReason, "%s", msg)
 			log.Info(msg)
 			return ctrl.Result{RequeueAfter: r.requeueDependency}, errWaitForDependency
 		}
 
-		conditions.MarkFalse(obj, meta.ReadyCondition, v2.ArtifactFailedReason, fmt.Sprintf("Could not load chart: %s", err.Error()))
+		conditions.MarkFalse(obj, meta.ReadyCondition, v2.ArtifactFailedReason, "Could not load chart: %s", err)
 		r.Eventf(obj, corev1.EventTypeWarning, v2.ArtifactFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
@@ -339,14 +340,14 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 
 	ociDigest, err := mutateChartWithSourceRevision(loadedChart, source)
 	if err != nil {
-		conditions.MarkFalse(obj, meta.ReadyCondition, "ChartMutateError", err.Error())
+		conditions.MarkFalse(obj, meta.ReadyCondition, "ChartMutateError", "%s", err)
 		return ctrl.Result{}, err
 	}
 
 	// Build the REST client getter.
 	getter, err := r.buildRESTClientGetter(ctx, obj)
 	if err != nil {
-		conditions.MarkFalse(obj, meta.ReadyCondition, "RESTClientError", err.Error())
+		conditions.MarkFalse(obj, meta.ReadyCondition, "RESTClientError", "%s", err)
 		return ctrl.Result{}, err
 	}
 	// Remove any stale corresponding Ready=False condition with Unknown.
@@ -354,14 +355,17 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 		conditions.MarkUnknown(obj, meta.ReadyCondition, meta.ProgressingReason, "reconciliation in progress")
 	}
 
-	// Attempt to adopt "legacy" v2beta1 release state on a best-effort basis.
-	// If this fails, the controller will fall back to performing an upgrade
-	// to settle on the desired state.
-	// TODO(hidde): remove this in a future release.
+	// Keep feature flagged code paths separate from the main reconciliation
+	// logic to ensure easy removal when the feature flag is removed.
 	if ok, _ := features.Enabled(features.AdoptLegacyReleases); ok {
+		// Attempt to adopt "legacy" v2beta1 release state on a best-effort basis.
+		// If this fails, the controller will fall back to performing an upgrade
+		// to settle on the desired state.
+		// TODO(hidde): remove this in a future release.
 		if err := r.adoptLegacyRelease(ctx, getter, obj); err != nil {
 			log.Error(err, "failed to adopt v2beta1 release state")
 		}
+		r.adoptPostRenderersStatus(obj)
 	}
 
 	// If the release target configuration has changed, we need to uninstall the
@@ -401,7 +405,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 		action.WithStorageLog(action.NewDebugLog(ctrl.LoggerFrom(ctx).V(logger.TraceLevel))),
 	)
 	if err != nil {
-		conditions.MarkFalse(obj, meta.ReadyCondition, "FactoryError", err.Error())
+		conditions.MarkFalse(obj, meta.ReadyCondition, "FactoryError", "%s", err)
 		return ctrl.Result{}, err
 	}
 	// Remove any stale corresponding Ready=False condition with Unknown.
@@ -426,7 +430,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context, patchHelpe
 	return jitter.JitteredRequeueInterval(ctrl.Result{RequeueAfter: obj.GetRequeueAfter()}), nil
 }
 
-// reconcileDelete deletes the v1beta2.HelmChart of the v2beta2.HelmRelease,
+// reconcileDelete deletes the v1beta2.HelmChart of the v2.HelmRelease,
 // and uninstalls the Helm release if the resource has not been suspended.
 func (r *HelmReleaseReconciler) reconcileDelete(ctx context.Context, obj *v2.HelmRelease) (ctrl.Result, error) {
 	// Only uninstall the release and delete the HelmChart resource if the
@@ -489,7 +493,7 @@ func (r *HelmReleaseReconciler) reconcileReleaseDeletion(ctx context.Context, ob
 		}
 
 		conditions.MarkFalse(obj, meta.ReadyCondition, v2.UninstallFailedReason,
-			"failed to build REST client getter to uninstall release: %s", err.Error())
+			"failed to build REST client getter to uninstall release: %s", err)
 		return err
 	}
 
@@ -523,7 +527,7 @@ func (r *HelmReleaseReconciler) reconcileReleaseDeletion(ctx context.Context, ob
 				}
 
 				conditions.MarkFalse(obj, meta.ReadyCondition, v2.UninstallFailedReason,
-					"failed to confirm ServiceAccount '%s' can be used to uninstall release: %s", serviceAccount, err.Error())
+					"failed to confirm ServiceAccount '%s' can be used to uninstall release: %s", serviceAccount, err)
 				return err
 			}
 		}
@@ -560,7 +564,7 @@ func (r *HelmReleaseReconciler) reconcileUninstall(ctx context.Context, getter g
 		action.WithStorageLog(action.NewDebugLog(ctrl.LoggerFrom(ctx).V(logger.TraceLevel))),
 	)
 	if err != nil {
-		conditions.MarkFalse(obj, meta.ReadyCondition, "ConfigFactoryErr", err.Error())
+		conditions.MarkFalse(obj, meta.ReadyCondition, "ConfigFactoryErr", "%s", err)
 		return err
 	}
 
@@ -568,7 +572,7 @@ func (r *HelmReleaseReconciler) reconcileUninstall(ctx context.Context, getter g
 	return intreconcile.NewUninstall(cfg, r.EventRecorder).Reconcile(ctx, &intreconcile.Request{Object: obj})
 }
 
-// checkDependencies checks if the dependencies of the given v2beta2.HelmRelease
+// checkDependencies checks if the dependencies of the given v2.HelmRelease
 // are Ready.
 // It returns an error if a dependency can not be retrieved or is not Ready,
 // otherwise nil.
@@ -594,10 +598,10 @@ func (r *HelmReleaseReconciler) checkDependencies(ctx context.Context, obj *v2.H
 	return nil
 }
 
-// adoptLegacyRelease attempts to adopt a v2beta1 release into a v2beta2
+// adoptLegacyRelease attempts to adopt a v2beta1 release into a v2
 // release.
 // This is done by retrieving the last successful release from the Helm storage
-// and converting it to a v2beta2 release snapshot.
+// and converting it to a v2 release snapshot.
 // If the v2beta1 release has already been adopted, this function is a no-op.
 func (r *HelmReleaseReconciler) adoptLegacyRelease(ctx context.Context, getter genericclioptions.RESTClientGetter, obj *v2.HelmRelease) error {
 	if obj.Status.LastReleaseRevision < 1 || len(obj.Status.History) > 0 {
@@ -630,7 +634,7 @@ func (r *HelmReleaseReconciler) adoptLegacyRelease(ctx context.Context, getter g
 		return err
 	}
 
-	// Convert it to a v2beta2 release snapshot.
+	// Convert it to a v2 release snapshot.
 	snap := release.ObservedToSnapshot(release.ObserveRelease(rls))
 
 	// If tests are enabled, include them as well.
@@ -646,6 +650,20 @@ func (r *HelmReleaseReconciler) adoptLegacyRelease(ctx context.Context, getter g
 	obj.Status.LastReleaseRevision = 0
 
 	return nil
+}
+
+// adoptPostRenderersStatus attempts to set obj.Status.ObservedPostRenderersDigest
+// for v2beta1 and v2beta2 HelmReleases.
+func (*HelmReleaseReconciler) adoptPostRenderersStatus(obj *v2.HelmRelease) {
+	if obj.GetGeneration() != obj.Status.ObservedGeneration {
+		return
+	}
+
+	// if we have a reconciled object with PostRenderers not reflected in the
+	// status, we need to update the status.
+	if obj.Spec.PostRenderers != nil && obj.Status.ObservedPostRenderersDigest == "" {
+		obj.Status.ObservedPostRenderersDigest = postrender.Digest(digest.Canonical, obj.Spec.PostRenderers).String()
+	}
 }
 
 func (r *HelmReleaseReconciler) buildRESTClientGetter(ctx context.Context, obj *v2.HelmRelease) (genericclioptions.RESTClientGetter, error) {
@@ -685,10 +703,10 @@ func (r *HelmReleaseReconciler) buildRESTClientGetter(ctx context.Context, obj *
 // using the chartRef in the spec, or by looking up the HelmChart
 // referenced in the status object.
 // It returns the source object or an error.
-func (r *HelmReleaseReconciler) getSource(ctx context.Context, obj *v2.HelmRelease) (source.Source, error) {
+func (r *HelmReleaseReconciler) getSource(ctx context.Context, obj *v2.HelmRelease) (sourcev1.Source, error) {
 	var name, namespace string
 	if obj.HasChartRef() {
-		if obj.Spec.ChartRef.Kind == sourcev1.OCIRepositoryKind {
+		if obj.Spec.ChartRef.Kind == sourcev1beta2.OCIRepositoryKind {
 			return r.getSourceFromOCIRef(ctx, obj)
 		}
 		name, namespace = obj.Spec.ChartRef.Name, obj.Spec.ChartRef.Namespace
@@ -712,18 +730,18 @@ func (r *HelmReleaseReconciler) getSource(ctx context.Context, obj *v2.HelmRelea
 	return &hc, nil
 }
 
-func (r *HelmReleaseReconciler) getSourceFromOCIRef(ctx context.Context, obj *v2.HelmRelease) (source.Source, error) {
+func (r *HelmReleaseReconciler) getSourceFromOCIRef(ctx context.Context, obj *v2.HelmRelease) (sourcev1.Source, error) {
 	name, namespace := obj.Spec.ChartRef.Name, obj.Spec.ChartRef.Namespace
 	if namespace == "" {
 		namespace = obj.GetNamespace()
 	}
 	ociRepoRef := types.NamespacedName{Namespace: namespace, Name: name}
 
-	if err := intacl.AllowsAccessTo(obj, sourcev1.OCIRepositoryKind, ociRepoRef); err != nil {
+	if err := intacl.AllowsAccessTo(obj, sourcev1beta2.OCIRepositoryKind, ociRepoRef); err != nil {
 		return nil, err
 	}
 
-	or := sourcev1.OCIRepository{}
+	or := sourcev1beta2.OCIRepository{}
 	if err := r.Client.Get(ctx, ociRepoRef, &or); err != nil {
 		return nil, err
 	}
@@ -732,7 +750,7 @@ func (r *HelmReleaseReconciler) getSourceFromOCIRef(ctx context.Context, obj *v2
 
 // waitForHistoryCacheSync returns a function that can be used to wait for the
 // cache backing the Kubernetes client to be in sync with the current state of
-// the v2beta2.HelmRelease.
+// the v2.HelmRelease.
 // This is a trade-off between not caching at all, and introducing a slight
 // delay to ensure we always have the latest history state.
 func (r *HelmReleaseReconciler) waitForHistoryCacheSync(obj *v2.HelmRelease) wait.ConditionWithContextFunc {
@@ -781,7 +799,7 @@ func (r *HelmReleaseReconciler) requestsForHelmChartChange(ctx context.Context, 
 }
 
 func (r *HelmReleaseReconciler) requestsForOCIRrepositoryChange(ctx context.Context, o client.Object) []reconcile.Request {
-	or, ok := o.(*sourcev1.OCIRepository)
+	or, ok := o.(*sourcev1beta2.OCIRepository)
 	if !ok {
 		err := fmt.Errorf("expected an OCIRepository, got %T", o)
 		ctrl.LoggerFrom(ctx).Error(err, "failed to get requests for OCIRepository change")
@@ -820,14 +838,14 @@ func (r *HelmReleaseReconciler) requestsForOCIRrepositoryChange(ctx context.Cont
 	return reqs
 }
 
-func isSourceReady(obj source.Source) (bool, string) {
+func isSourceReady(obj sourcev1.Source) (bool, string) {
 	if o, ok := obj.(conditions.Getter); ok {
 		return isReady(o, obj.GetArtifact())
 	}
-	return false, fmt.Sprintf("unknown source type: %T", obj)
+	return false, fmt.Sprintf("unknown sourcev1 type: %T", obj)
 }
 
-func isReady(obj conditions.Getter, artifact *source.Artifact) (bool, string) {
+func isReady(obj conditions.Getter, artifact *sourcev1.Artifact) (bool, string) {
 	observedGen, err := object.GetStatusObservedGeneration(obj)
 	if err != nil {
 		return false, err.Error()
@@ -879,11 +897,11 @@ func getNamespacedName(obj *v2.HelmRelease) (types.NamespacedName, error) {
 	return namespacedName, nil
 }
 
-func mutateChartWithSourceRevision(chart *chart.Chart, source source.Source) (string, error) {
+func mutateChartWithSourceRevision(chart *chart.Chart, source sourcev1.Source) (string, error) {
 	// If the source is an OCIRepository, we can try to mutate the chart version
 	// with the artifact revision. The revision is either a <tag>@<digest> or
 	// just a digest.
-	obj, ok := source.(*sourcev1.OCIRepository)
+	obj, ok := source.(*sourcev1beta2.OCIRepository)
 	if !ok {
 		// if not make sure to return an empty string to delete the digest of the
 		// last attempted revision
@@ -899,7 +917,11 @@ func mutateChartWithSourceRevision(chart *chart.Chart, source source.Source) (st
 	switch {
 	case strings.Contains(revision, "@"):
 		tagD := strings.Split(revision, "@")
-		if len(tagD) != 2 || tagD[0] != chart.Metadata.Version {
+		tagVer, err := semver.NewVersion(tagD[0])
+		if err != nil {
+			return "", fmt.Errorf("failed parsing artifact revision %s", tagD[0])
+		}
+		if len(tagD) != 2 || !tagVer.Equal(ver) {
 			return "", fmt.Errorf("artifact revision %s does not match chart version %s", tagD[0], chart.Metadata.Version)
 		}
 		// algotithm are sha256, sha384, sha512 with the canonical being sha256

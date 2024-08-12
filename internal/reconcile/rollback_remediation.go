@@ -29,7 +29,7 @@ import (
 	"github.com/fluxcd/pkg/runtime/conditions"
 	"github.com/fluxcd/pkg/runtime/logger"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
@@ -137,13 +137,14 @@ func (r *RollbackRemediation) failure(req *Request, prev *v2.Snapshot, buffer *a
 
 	// Mark remediation failure on object.
 	req.Object.Status.Failures++
-	conditions.MarkFalse(req.Object, v2.RemediatedCondition, v2.RollbackFailedReason, msg)
+	conditions.MarkFalse(req.Object, v2.RemediatedCondition, v2.RollbackFailedReason, "%s", msg)
 
 	// Record warning event, this message contains more data than the
 	// Condition summary.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
-		eventMeta(prev.ChartVersion, chartutil.DigestValues(digest.Canonical, req.Values).String(), addOCIDigest(prev.OCIDigest)),
+		eventMeta(prev.ChartVersion, chartutil.DigestValues(digest.Canonical, req.Values).String(),
+			addAppVersion(prev.AppVersion), addOCIDigest(prev.OCIDigest)),
 		corev1.EventTypeWarning,
 		v2.RollbackFailedReason,
 		eventMessageWithLog(msg, buffer),
@@ -157,12 +158,13 @@ func (r *RollbackRemediation) success(req *Request, prev *v2.Snapshot) {
 	msg := fmt.Sprintf(fmtRollbackRemediationSuccess, prev.FullReleaseName(), prev.VersionedChartName())
 
 	// Mark remediation success on object.
-	conditions.MarkTrue(req.Object, v2.RemediatedCondition, v2.RollbackSucceededReason, msg)
+	conditions.MarkTrue(req.Object, v2.RemediatedCondition, v2.RollbackSucceededReason, "%s", msg)
 
 	// Record event.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
-		eventMeta(prev.ChartVersion, chartutil.DigestValues(digest.Canonical, req.Values).String(), addOCIDigest(prev.OCIDigest)),
+		eventMeta(prev.ChartVersion, chartutil.DigestValues(digest.Canonical, req.Values).String(),
+			addAppVersion(prev.AppVersion), addOCIDigest(prev.OCIDigest)),
 		corev1.EventTypeNormal,
 		v2.RollbackSucceededReason,
 		msg,

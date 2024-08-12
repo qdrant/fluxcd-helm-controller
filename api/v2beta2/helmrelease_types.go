@@ -27,6 +27,8 @@ import (
 
 	"github.com/fluxcd/pkg/apis/kustomize"
 	"github.com/fluxcd/pkg/apis/meta"
+
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 )
 
 const (
@@ -79,10 +81,13 @@ type HelmReleaseSpec struct {
 	// Chart defines the template of the v1beta2.HelmChart that should be created
 	// for this HelmRelease.
 	// +optional
-	Chart HelmChartTemplate `json:"chart,omitempty"`
+	Chart *HelmChartTemplate `json:"chart,omitempty"`
 
 	// ChartRef holds a reference to a source controller resource containing the
 	// Helm chart artifact.
+	//
+	// Note: this field is provisional to the v2 API, and not actively used
+	// by v2beta2 HelmReleases.
 	// +optional
 	ChartRef *CrossNamespaceSourceReference `json:"chartRef,omitempty"`
 
@@ -375,6 +380,10 @@ type HelmChartTemplateSpec struct {
 	// +optional
 	// +deprecated
 	ValuesFile string `json:"valuesFile,omitempty"`
+
+	// IgnoreMissingValuesFiles controls whether to silently ignore missing values files rather than failing.
+	// +optional
+	IgnoreMissingValuesFiles bool `json:"ignoreMissingValuesFiles,omitempty"`
 
 	// Verify contains the secret name containing the trusted public keys
 	// used to verify the signature and specifies which provider to use to check
@@ -947,6 +956,11 @@ type HelmReleaseStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// ObservedPostRenderersDigest is the digest for the post-renderers of
+	// the last successful reconciliation attempt.
+	// +optional
+	ObservedPostRenderersDigest string `json:"observedPostRenderersDigest,omitempty"`
+
 	// LastAttemptedGeneration is the last generation the controller attempted
 	// to reconcile.
 	// +optional
@@ -972,7 +986,7 @@ type HelmReleaseStatus struct {
 	// History holds the history of Helm releases performed for this HelmRelease
 	// up to the last successfully completed release.
 	// +optional
-	History Snapshots `json:"history,omitempty"`
+	History v2.Snapshots `json:"history,omitempty"`
 
 	// LastAttemptedReleaseAction is the last release action performed for this
 	// HelmRelease. It is used to determine the active remediation strategy.
@@ -1082,6 +1096,7 @@ const (
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description=""
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status",description=""
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message",description=""
+// +kubebuilder:deprecatedversion:warning="v2beta2 HelmRelease is deprecated, upgrade to v2"
 
 // HelmRelease is the Schema for the helmreleases API
 type HelmRelease struct {
@@ -1264,7 +1279,7 @@ func (in *HelmRelease) HasChartRef() bool {
 
 // IsChartTemplatePresent returns true if the HelmRelease has a ChartTemplate.
 func (in *HelmRelease) HasChartTemplate() bool {
-	return in.Spec.Chart.Spec.Chart != ""
+	return in.Spec.Chart != nil
 }
 
 // +kubebuilder:object:root=true

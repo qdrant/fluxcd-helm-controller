@@ -36,7 +36,7 @@ import (
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/conditions"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
@@ -404,6 +404,7 @@ func TestUnlock_failure(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
 					eventMetaGroupKey(eventv1.MetaRevisionKey): cur.Chart.Metadata.Version,
+					eventMetaGroupKey(metaAppVersionKey):       cur.Chart.Metadata.AppVersion,
 					eventMetaGroupKey(eventv1.MetaTokenKey):    chartutil.DigestValues(digest.Canonical, cur.Config).String(),
 				},
 			},
@@ -450,6 +451,7 @@ func TestUnlock_success(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
 					eventMetaGroupKey(eventv1.MetaRevisionKey): cur.Chart.Metadata.Version,
+					eventMetaGroupKey(metaAppVersionKey):       cur.Chart.Metadata.AppVersion,
 					eventMetaGroupKey(eventv1.MetaTokenKey):    chartutil.DigestValues(digest.Canonical, cur.Config).String(),
 				},
 			},
@@ -539,6 +541,7 @@ func TestUnlock_withOCIDigest(t *testing.T) {
 				Annotations: map[string]string{
 					eventMetaGroupKey(metaOCIDigestKey):        expected.OCIDigest,
 					eventMetaGroupKey(eventv1.MetaRevisionKey): rls.Chart.Metadata.Version,
+					eventMetaGroupKey(metaAppVersionKey):       rls.Chart.Metadata.AppVersion,
 					eventMetaGroupKey(eventv1.MetaTokenKey):    chartutil.DigestValues(digest.Canonical, rls.Config).String(),
 				},
 			},

@@ -29,7 +29,7 @@ import (
 
 	"github.com/fluxcd/pkg/runtime/conditions"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/release"
 	"github.com/fluxcd/helm-controller/internal/storage"
@@ -139,13 +139,13 @@ func (r *Test) failure(req *Request, err error) {
 
 	// Mark test failure on object.
 	req.Object.Status.Failures++
-	conditions.MarkFalse(req.Object, v2.TestSuccessCondition, v2.TestFailedReason, msg)
+	conditions.MarkFalse(req.Object, v2.TestSuccessCondition, v2.TestFailedReason, "%s", msg)
 
 	// Record warning event, this message contains more data than the
 	// Condition summary.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
-		eventMeta(cur.ChartVersion, cur.ConfigDigest, addOCIDigest(cur.OCIDigest)),
+		eventMeta(cur.ChartVersion, cur.ConfigDigest, addAppVersion(cur.AppVersion), addOCIDigest(cur.OCIDigest)),
 		corev1.EventTypeWarning,
 		v2.TestFailedReason,
 		msg,
@@ -176,12 +176,12 @@ func (r *Test) success(req *Request) {
 	msg := fmt.Sprintf(fmtTestSuccess, cur.FullReleaseName(), cur.VersionedChartName(), hookMsg)
 
 	// Mark test success on object.
-	conditions.MarkTrue(req.Object, v2.TestSuccessCondition, v2.TestSucceededReason, msg)
+	conditions.MarkTrue(req.Object, v2.TestSuccessCondition, v2.TestSucceededReason, "%s", msg)
 
 	// Record event.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
-		eventMeta(cur.ChartVersion, cur.ConfigDigest, addOCIDigest(cur.OCIDigest)),
+		eventMeta(cur.ChartVersion, cur.ConfigDigest, addAppVersion(cur.AppVersion), addOCIDigest(cur.OCIDigest)),
 		corev1.EventTypeNormal,
 		v2.TestSucceededReason,
 		msg,

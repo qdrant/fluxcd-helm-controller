@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - name: Setup QEMU
         uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
       - name: Setup Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@2b51285047da1547ffb1b2203d8be4c0af6b1f20 # v3.2.0
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
         with:
           buildkitd-flags: "--debug"
       - name: Cache Docker layers
@@ -32,14 +32,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-ghcache-
       - name: Setup Go
-        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
         with:
           go-version-file: 'go.mod'
           cache-dependency-path: |
             **/go.sum
             **/go.mod
       - name: Setup Kubernetes
-        uses: helm/kind-action@99576bfa6ddf9a8e612d83b513da5a75875caced # v1.9.0
+        uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
         with:
           version: v0.20.0
           cluster_name: kind
@@ -91,6 +91,14 @@ jobs:
           kubectl -n helm-system rollout status deploy/helm-controller --timeout=1m
         env:
           KUBEBUILDER_ASSETS: ${{ github.workspace }}/kubebuilder/bin
+      - name: Test samples
+        run: |
+          kubectl create ns samples
+          kubectl -n samples apply -f config/samples
+          kubectl -n samples wait hr/podinfo-ocirepository --for=condition=ready --timeout=4m
+          kubectl -n samples wait hr/podinfo-gitrepository --for=condition=ready --timeout=4m
+          kubectl -n samples wait hr/podinfo-helmrepository --for=condition=ready --timeout=4m
+          kubectl delete ns samples
       - name: Install sources
         run: |
           kubectl -n helm-system apply -f config/testdata/sources
@@ -138,6 +146,11 @@ jobs:
           kubectl -n install-create-target-ns get deployment install-create-target-ns-install-create-target-ns-podinfo
 
           kubectl -n helm-system delete -f config/testdata/install-create-target-ns
+      - name: Run install from helmChart test
+        run: |
+          kubectl -n helm-system apply -f config/testdata/install-from-hc-source
+          kubectl -n helm-system wait helmreleases/podinfo-from-hc --for=condition=ready --timeout=4m
+          kubectl -n helm-system delete -f config/testdata/install-from-hc-source
       - name: Run install from ocirepo test
         run: |
           kubectl -n helm-system apply -f config/testdata/install-from-ocirepo-source

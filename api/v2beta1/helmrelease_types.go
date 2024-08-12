@@ -29,6 +29,7 @@ import (
 	"github.com/fluxcd/pkg/apis/kustomize"
 	"github.com/fluxcd/pkg/apis/meta"
 
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/api/v2beta2"
 )
 
@@ -69,7 +70,15 @@ type HelmReleaseSpec struct {
 	// Chart defines the template of the v1beta2.HelmChart that should be created
 	// for this HelmRelease.
 	// +required
-	Chart HelmChartTemplate `json:"chart"`
+	Chart *HelmChartTemplate `json:"chart,omitempty"`
+
+	// ChartRef holds a reference to a source controller resource containing the
+	// Helm chart artifact.
+	//
+	// Note: this field is provisional to the v2 API, and not actively used
+	// by v2beta1 HelmReleases.
+	// +optional
+	ChartRef *v2.CrossNamespaceSourceReference `json:"chartRef,omitempty"`
 
 	// Interval at which to reconcile the Helm release.
 	// This interval is approximate and may be subject to jitter to ensure
@@ -874,6 +883,11 @@ type HelmReleaseStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// ObservedPostRenderersDigest is the digest for the post-renderers of
+	// the last successful reconciliation attempt.
+	// +optional
+	ObservedPostRenderersDigest string `json:"observedPostRenderersDigest,omitempty"`
+
 	meta.ReconcileRequestStatus `json:",inline"`
 
 	// Conditions holds the conditions for the HelmRelease.
@@ -931,7 +945,7 @@ type HelmReleaseStatus struct {
 	// Note: this field is provisional to the v2beta2 API, and not actively used
 	// by v2beta1 HelmReleases.
 	// +optional
-	History v2beta2.Snapshots `json:"history,omitempty"`
+	History v2.Snapshots `json:"history,omitempty"`
 
 	// LastAttemptedGeneration is the last generation the controller attempted
 	// to reconcile.
@@ -1087,7 +1101,7 @@ const (
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description=""
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status",description=""
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message",description=""
-// +kubebuilder:deprecatedversion:warning="v2beta1 HelmRelease is deprecated, upgrade to v2beta2"
+// +kubebuilder:deprecatedversion:warning="v2beta1 HelmRelease is deprecated, upgrade to v2"
 
 // HelmRelease is the Schema for the helmreleases API
 type HelmRelease struct {

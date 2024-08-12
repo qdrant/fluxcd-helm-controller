@@ -32,9 +32,9 @@ import (
 
 	eventv1 "github.com/fluxcd/pkg/apis/event/v1beta1"
 	"github.com/fluxcd/pkg/ssa"
-	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/acl"
 	"github.com/fluxcd/helm-controller/internal/strings"
 )
@@ -43,22 +43,22 @@ import (
 // based on the given Request data.
 //
 // It does this by building a v1beta2.HelmChart from the template declared in
-// the v2beta2.HelmRelease, and then reconciling that v1beta2.HelmChart using
+// the v2.HelmRelease, and then reconciling that v1beta2.HelmChart using
 // a server-side apply.
 //
 // When the server-side apply succeeds, the namespaced name of the chart is
-// written to the Status.HelmChart field of the v2beta2.HelmRelease. If the
+// written to the Status.HelmChart field of the v2.HelmRelease. If the
 // server-side apply fails, the error is returned to the caller and indicates
 // they should retry.
 //
 // When at the beginning of the reconciliation the deletion timestamp is set
-// on the v2beta2.HelmRelease, or the Status.HelmChart differs from the
+// on the v2.HelmRelease, or the Status.HelmChart differs from the
 // namespaced name of the chart to be applied, the existing chart is deleted.
 // The deletion is observed, and when it completes, the Status.HelmChart is
 // cleared. If the deletion fails, the error is returned to the caller and
 // indicates they should retry.
 //
-// In case the v2beta2.HelmRelease is marked for deletion, the reconciler will
+// In case the v2.HelmRelease is marked for deletion, the reconciler will
 // not continue to attempt to create or update the v1beta2.HelmChart.
 type HelmChartTemplate struct {
 	client        client.Client
@@ -79,11 +79,13 @@ func NewHelmChartTemplate(client client.Client, recorder record.EventRecorder, f
 func (r *HelmChartTemplate) Reconcile(ctx context.Context, req *Request) error {
 	var (
 		obj      = req.Object
-		chartRef = types.NamespacedName{
-			Namespace: obj.Spec.Chart.GetNamespace(obj.Namespace),
-			Name:      obj.GetHelmChartName(),
-		}
+		chartRef = types.NamespacedName{}
 	)
+
+	if obj.Spec.Chart != nil {
+		chartRef.Name = obj.GetHelmChartName()
+		chartRef.Namespace = obj.Spec.Chart.GetNamespace(obj.Namespace)
+	}
 
 	// The HelmChart name and/or namespace diverges or the HelmRelease is
 	// being deleted, delete the HelmChart.
@@ -226,10 +228,10 @@ func buildHelmChartFromTemplate(obj *v2.HelmRelease) *sourcev1.HelmChart {
 				Name: template.Spec.SourceRef.Name,
 				Kind: template.Spec.SourceRef.Kind,
 			},
-			Interval:          template.GetInterval(obj.Spec.Interval),
-			ReconcileStrategy: template.Spec.ReconcileStrategy,
-			ValuesFiles:       template.Spec.ValuesFiles,
-			ValuesFile:        template.Spec.ValuesFile,
+			Interval:                 template.GetInterval(obj.Spec.Interval),
+			ReconcileStrategy:        template.Spec.ReconcileStrategy,
+			ValuesFiles:              template.Spec.ValuesFiles,
+			IgnoreMissingValuesFiles: template.Spec.IgnoreMissingValuesFiles,
 		},
 	}
 	if verifyTpl := template.Spec.Verify; verifyTpl != nil {

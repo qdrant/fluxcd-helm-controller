@@ -25,7 +25,7 @@ import (
 	helmrelease "helm.sh/helm/v3/pkg/release"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
 )
@@ -80,7 +80,7 @@ type Observation struct {
 	// Namespace is the Kubernetes namespace of the release.
 	Namespace string `json:"namespace"`
 	// OCIDigest is the digest of the OCI artifact that was used to
-	OCIDigest string `json:"ociDigest"`
+	OCIDigest string `json:"ociDigest,omitempty"`
 }
 
 // Targets returns if the release matches the given name, namespace and
@@ -152,7 +152,7 @@ func ObserveRelease(rel *helmrelease.Release, filter ...DataFilter) Observation 
 	return obsRel
 }
 
-// ObservedToSnapshot returns a v2beta2.Snapshot constructed from the
+// ObservedToSnapshot returns a v2.Snapshot constructed from the
 // Observation data. Calculating the (config) digest using the
 // digest.Canonical algorithm.
 func ObservedToSnapshot(rls Observation) *v2.Snapshot {
@@ -161,6 +161,7 @@ func ObservedToSnapshot(rls Observation) *v2.Snapshot {
 		Name:          rls.Name,
 		Namespace:     rls.Namespace,
 		Version:       rls.Version,
+		AppVersion:    rls.ChartMetadata.AppVersion,
 		ChartName:     rls.ChartMetadata.Name,
 		ChartVersion:  rls.ChartMetadata.Version,
 		ConfigDigest:  chartutil.DigestValues(digest.Canonical, rls.Config).String(),
@@ -172,7 +173,7 @@ func ObservedToSnapshot(rls Observation) *v2.Snapshot {
 	}
 }
 
-// TestHooksFromRelease returns the list of v2beta2.TestHookStatus for the
+// TestHooksFromRelease returns the list of v2.TestHookStatus for the
 // given release, indexed by name.
 func TestHooksFromRelease(rls *helmrelease.Release) map[string]*v2.TestHookStatus {
 	hooks := make(map[string]*v2.TestHookStatus)

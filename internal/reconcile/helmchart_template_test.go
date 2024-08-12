@@ -31,9 +31,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/fluxcd/pkg/apis/meta"
-	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
+	sourcev1beta2 "github.com/fluxcd/source-controller/api/v1beta2"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/acl"
 )
 
@@ -143,7 +144,7 @@ func TestHelmChartTemplate_Reconcile(t *testing.T) {
 				Name:      "release-with-existing-chart",
 			},
 			Spec: v2.HelmReleaseSpec{
-				Chart: v2.HelmChartTemplate{
+				Chart: &v2.HelmChartTemplate{
 					Spec: v2.HelmChartTemplateSpec{
 						Chart: "foo",
 						SourceRef: v2.CrossNamespaceObjectReference{
@@ -193,7 +194,7 @@ func TestHelmChartTemplate_Reconcile(t *testing.T) {
 			},
 			Spec: v2.HelmReleaseSpec{
 				Interval: metav1.Duration{Duration: 1 * time.Hour},
-				Chart: v2.HelmChartTemplate{
+				Chart: &v2.HelmChartTemplate{
 					Spec: v2.HelmChartTemplateSpec{
 						SourceRef: v2.CrossNamespaceObjectReference{
 							Kind: sourcev1.HelmRepositoryKind,
@@ -264,7 +265,7 @@ func TestHelmChartTemplate_Reconcile(t *testing.T) {
 			},
 			Spec: v2.HelmReleaseSpec{
 				Interval: metav1.Duration{Duration: 1 * time.Hour},
-				Chart: v2.HelmChartTemplate{
+				Chart: &v2.HelmChartTemplate{
 					Spec: v2.HelmChartTemplateSpec{
 						Chart: "foo",
 						SourceRef: v2.CrossNamespaceObjectReference{
@@ -335,7 +336,7 @@ func TestHelmChartTemplate_Reconcile(t *testing.T) {
 			},
 			Spec: v2.HelmReleaseSpec{
 				Interval: existingChart.Spec.Interval,
-				Chart: v2.HelmChartTemplate{
+				Chart: &v2.HelmChartTemplate{
 					Spec: v2.HelmChartTemplateSpec{
 						Chart: existingChart.Spec.Chart,
 						SourceRef: v2.CrossNamespaceObjectReference{
@@ -379,7 +380,7 @@ func TestHelmChartTemplate_Reconcile(t *testing.T) {
 			},
 			Spec: v2.HelmReleaseSpec{
 				Interval: metav1.Duration{Duration: 1 * time.Hour},
-				Chart: v2.HelmChartTemplate{
+				Chart: &v2.HelmChartTemplate{
 					Spec: v2.HelmChartTemplateSpec{
 						SourceRef: v2.CrossNamespaceObjectReference{
 							Kind: sourcev1.HelmRepositoryKind,
@@ -423,7 +424,7 @@ func TestHelmChartTemplate_Reconcile(t *testing.T) {
 				Namespace: "default",
 			},
 			Spec: v2.HelmReleaseSpec{
-				Chart: v2.HelmChartTemplate{
+				Chart: &v2.HelmChartTemplate{
 					Spec: v2.HelmChartTemplateSpec{
 						SourceRef: v2.CrossNamespaceObjectReference{
 							Name:      "chart",
@@ -484,7 +485,7 @@ func TestHelmChartTemplate_Reconcile(t *testing.T) {
 			Spec: v2.HelmReleaseSpec{
 				Interval: metav1.Duration{Duration: 1 * time.Hour},
 				ChartRef: &v2.CrossNamespaceSourceReference{
-					Kind: sourcev1.OCIRepositoryKind,
+					Kind: sourcev1beta2.OCIRepositoryKind,
 					Name: "oci-repository",
 				},
 			},
@@ -660,7 +661,7 @@ func Test_buildHelmChartFromTemplate(t *testing.T) {
 		},
 		Spec: v2.HelmReleaseSpec{
 			Interval: metav1.Duration{Duration: time.Minute},
-			Chart: v2.HelmChartTemplate{
+			Chart: &v2.HelmChartTemplate{
 				Spec: v2.HelmChartTemplateSpec{
 					Chart:   "chart",
 					Version: "1.0.0",

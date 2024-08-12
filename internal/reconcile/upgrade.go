@@ -28,7 +28,7 @@ import (
 	"github.com/fluxcd/pkg/runtime/conditions"
 	"github.com/fluxcd/pkg/runtime/logger"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
@@ -138,14 +138,14 @@ func (r *Upgrade) failure(req *Request, buffer *action.LogBuffer, err error) {
 
 	// Mark upgrade failure on object.
 	req.Object.Status.Failures++
-	conditions.MarkFalse(req.Object, v2.ReleasedCondition, v2.UpgradeFailedReason, msg)
+	conditions.MarkFalse(req.Object, v2.ReleasedCondition, v2.UpgradeFailedReason, "%s", msg)
 
 	// Record warning event, this message contains more data than the
 	// Condition summary.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
 		eventMeta(req.Chart.Metadata.Version, chartutil.DigestValues(digest.Canonical, req.Values).String(),
-			addOCIDigest(req.Object.Status.LastAttemptedRevisionDigest)),
+			addAppVersion(req.Chart.AppVersion()), addOCIDigest(req.Object.Status.LastAttemptedRevisionDigest)),
 		corev1.EventTypeWarning,
 		v2.UpgradeFailedReason,
 		eventMessageWithLog(msg, buffer),
@@ -163,7 +163,7 @@ func (r *Upgrade) success(req *Request) {
 	msg := fmt.Sprintf(fmtUpgradeSuccess, cur.FullReleaseName(), cur.VersionedChartName())
 
 	// Mark upgrade success on object.
-	conditions.MarkTrue(req.Object, v2.ReleasedCondition, v2.UpgradeSucceededReason, msg)
+	conditions.MarkTrue(req.Object, v2.ReleasedCondition, v2.UpgradeSucceededReason, "%s", msg)
 	if req.Object.GetTest().Enable && !cur.HasBeenTested() {
 		conditions.MarkUnknown(req.Object, v2.TestSuccessCondition, "AwaitingTests", fmtTestPending,
 			cur.FullReleaseName(), cur.VersionedChartName())
@@ -172,7 +172,7 @@ func (r *Upgrade) success(req *Request) {
 	// Record event.
 	r.eventRecorder.AnnotatedEventf(
 		req.Object,
-		eventMeta(cur.ChartVersion, cur.ConfigDigest, addOCIDigest(cur.OCIDigest)),
+		eventMeta(cur.ChartVersion, cur.ConfigDigest, addAppVersion(cur.AppVersion), addOCIDigest(cur.OCIDigest)),
 		corev1.EventTypeNormal,
 		v2.UpgradeSucceededReason,
 		msg,

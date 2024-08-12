@@ -40,7 +40,7 @@ SOURCE_CRD_VER = $(CRD_DEP_ROOT)/.src-crd-$(SOURCE_VER)
 HELMCHART_SOURCE_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_helmcharts.yaml
 
 # API (doc) generation utilities
-CONTROLLER_GEN_VERSION ?= v0.14.0
+CONTROLLER_GEN_VERSION ?= v0.15.0
 GEN_API_REF_DOCS_VERSION ?= e327d0730470cbd61b06300f81c5fcf91c23c113
 
 all: manager
@@ -93,7 +93,7 @@ manifests: controller-gen
 
 # Generate API reference documentation
 api-docs: gen-crd-api-reference-docs
-	$(GEN_CRD_API_REFERENCE_DOCS) -api-dir=./api/v2beta2 -config=./hack/api-docs/config.json -template-dir=./hack/api-docs/template -out-file=./docs/api/v2beta2/helm.md
+	$(GEN_CRD_API_REFERENCE_DOCS) -api-dir=./api/v2 -config=./hack/api-docs/config.json -template-dir=./hack/api-docs/template -out-file=./docs/api/v2/helm.md
 
 # Run go mod tidy
 tidy:

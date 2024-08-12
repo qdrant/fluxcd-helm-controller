@@ -35,10 +35,12 @@ import (
 	"github.com/fluxcd/pkg/runtime/patch"
 	"github.com/fluxcd/pkg/ssa/jsondiff"
 
-	v2 "github.com/fluxcd/helm-controller/api/v2beta2"
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/diff"
+	"github.com/fluxcd/helm-controller/internal/digest"
 	interrors "github.com/fluxcd/helm-controller/internal/errors"
+	"github.com/fluxcd/helm-controller/internal/postrender"
 )
 
 // OwnedConditions is a list of Condition types owned by the HelmRelease object.
@@ -183,7 +185,7 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 			log.V(logger.DebugLevel).Info("determining current state of Helm release")
 			state, err := DetermineReleaseState(ctx, r.configFactory, req)
 			if err != nil {
-				conditions.MarkFalse(req.Object, meta.ReadyCondition, "StateError", fmt.Sprintf("Could not determine release state: %s", err.Error()))
+				conditions.MarkFalse(req.Object, meta.ReadyCondition, "StateError", "Could not determine release state: %s", err)
 				return fmt.Errorf("cannot determine release state: %w", err)
 			}
 
@@ -196,7 +198,7 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 					return err
 				}
 				if errors.Is(err, ErrMissingRollbackTarget) {
-					conditions.MarkStalled(req.Object, "MissingRollbackTarget", "Failed to perform remediation: %s", err.Error())
+					conditions.MarkStalled(req.Object, "MissingRollbackTarget", "Failed to perform remediation: %s", err)
 					return err
 				}
 				return err
@@ -210,6 +212,15 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 				// written to Ready.
 				summarize(req)
 
+				// remove stale post-renderers digest on successful reconciliation.
+				if conditions.IsReady(req.Object) {
+					req.Object.Status.ObservedPostRenderersDigest = ""
+					if req.Object.Spec.PostRenderers != nil {
+						// Update the post-renderers digest if the post-renderers exist.
+						req.Object.Status.ObservedPostRenderersDigest = postrender.Digest(digest.Canonical, req.Object.Spec.PostRenderers).String()
+					}
+				}
+
 				return nil
 			}
 
@@ -220,7 +231,7 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 				)
 
 				if remediation := req.Object.GetActiveRemediation(); remediation == nil || !remediation.RetriesExhausted(req.Object) {
-					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, conditions.GetMessage(req.Object, meta.ReadyCondition))
+					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "%s", conditions.GetMessage(req.Object, meta.ReadyCondition))
 					return ErrMustRequeue
 				}
 
@@ -232,14 +243,14 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 			// This to show continuous progress, as Helm actions can be long-running.
 			reconcilingMsg := fmt.Sprintf("Running '%s' action with timeout of %s",
 				next.Name(), timeoutForAction(next, req.Object).String())
-			conditions.MarkReconciling(req.Object, meta.ProgressingReason, reconcilingMsg)
+			conditions.MarkReconciling(req.Object, meta.ProgressingReason, "%s", reconcilingMsg)
 
 			// If the next action is a release action, we can mark the release
 			// as progressing in terms of readiness as well. Doing this for any
 			// other action type is not useful, as it would potentially
 			// overwrite more important failure state from an earlier action.
 			if next.Type() == ReconcilerTypeRelease {
-				conditions.MarkUnknown(req.Object, meta.ReadyCondition, meta.ProgressingReason, reconcilingMsg)
+				conditions.MarkUnknown(req.Object, meta.ReadyCondition, meta.ProgressingReason, "%s", reconcilingMsg)
 			}
 
 			// Patch the object to reflect the new condition.
@@ -251,7 +262,7 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 			log.Info(fmt.Sprintf("running '%s' action with timeout of %s", next.Name(), timeoutForAction(next, req.Object).String()))
 			if err = next.Reconcile(ctx, req); err != nil {
 				if conditions.IsReady(req.Object) {
-					conditions.MarkFalse(req.Object, meta.ReadyCondition, "ReconcileError", err.Error())
+					conditions.MarkFalse(req.Object, meta.ReadyCondition, "ReconcileError", "%s", err)
 				}
 				return err
 			}
@@ -264,7 +275,7 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 
 				remediation := req.Object.GetActiveRemediation()
 				if remediation == nil || !remediation.RetriesExhausted(req.Object) {
-					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, conditions.GetMessage(req.Object, meta.ReadyCondition))
+					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "%s", conditions.GetMessage(req.Object, meta.ReadyCondition))
 					return ErrMustRequeue
 				}
 				// Check if retries have exhausted after remediation for early
@@ -314,10 +325,6 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 			ignoreFailures = remediation.MustIgnoreTestFailures(req.Object.GetTest().IgnoreFailures)
 		}
 		req.Object.Status.History.Truncate(ignoreFailures)
-
-		// TODO(hidde): this allows existing UIs to continue to display this
-		//  field, but should be removed in a future release.
-		req.Object.Status.LastAppliedRevision = req.Object.Status.History.Latest().ChartVersion
 
 		if forceRequested {
 			log.Info(msgWithReason("forcing upgrade for in-sync release", "force requested through annotation"))
@@ -381,8 +388,13 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 				log.V(logger.DebugLevel).Info("resource deleted",
 					"resource", diff.ResourceName(change.DesiredObject))
 			case jsondiff.DiffTypeUpdate:
+				patch := change.Patch
+				if change.DesiredObject.GetObjectKind().GroupVersionKind().Kind == "Secret" {
+					patch = jsondiff.MaskSecretPatchData(change.Patch)
+				}
 				log.V(logger.DebugLevel).Info("resource modified",
-					"resource", diff.ResourceName(change.DesiredObject))
+					"resource", diff.ResourceName(change.DesiredObject),
+					"patch", patch)
 			}
 		}
 
