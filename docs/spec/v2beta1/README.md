@@ -1,4 +1,4 @@
-# helm.toolkit.fluxcd.io/v2beta1
+# cd.qdrant.io/v2beta1
 
 This is the v2beta1 API specification for declaratively managing Helm chart releases with
 Kubernetes manifests.

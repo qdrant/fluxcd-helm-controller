@@ -638,8 +638,8 @@ To list all Kubernetes objects reconciled from a HelmRelease:
 
 ```sh
 kubectl get all --all-namespaces \
-  -l=helm.toolkit.fluxcd.io/name="<HelmRelease name>" \
-  -l=helm.toolkit.fluxcd.io/namespace="<HelmRelease namespace>"
+  -l=cd.qdrant.io/name="<HelmRelease name>" \
+  -l=cd.qdrant.io/namespace="<HelmRelease namespace>"
 ```
 
 ### Disabling resource waiting
@@ -660,7 +660,7 @@ Assuming two `HelmRelease` resources:
 - `frontend` - contains the frontend of the application and relies on the backend
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2alpha1
+apiVersion: cd.qdrant.io/v2alpha1
 kind: HelmRelease
 metadata:
   name: backend
@@ -687,7 +687,7 @@ spec:
         cpu: 100m
         memory: 64Mi
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2alpha1
+apiVersion: cd.qdrant.io/v2alpha1
 kind: HelmRelease
 metadata:
   name: frontend
@@ -735,7 +735,7 @@ can be overridden per Helm action by setting `spec.install.remediation.ignoreTes
 or `spec.upgrade.remediation.ignoreTestFailures`.
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2alpha1
+apiVersion: cd.qdrant.io/v2alpha1
 kind: HelmRelease
 metadata:
   name: podinfo

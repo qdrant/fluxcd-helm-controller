@@ -12,7 +12,21 @@ rules:
   - create
   - patch
 - apiGroups:
-  - helm.toolkit.fluxcd.io
+  - cd.qdrant.io
+  resources:
+  - helmcharts
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cd.qdrant.io
+  resources:
+  - helmcharts/status
+  verbs:
+  - get
+- apiGroups:
+  - cd.qdrant.io
   resources:
   - helmreleases
   verbs:
@@ -24,7 +38,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - helm.toolkit.fluxcd.io
+  - cd.qdrant.io
   resources:
   - helmreleases/finalizers
   verbs:
@@ -34,7 +48,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - helm.toolkit.fluxcd.io
+  - cd.qdrant.io
   resources:
   - helmreleases/status
   verbs:
@@ -42,21 +56,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - source.toolkit.fluxcd.io
-  resources:
-  - helmcharts
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - source.toolkit.fluxcd.io
-  resources:
-  - helmcharts/status
-  verbs:
-  - get
-- apiGroups:
-  - source.toolkit.fluxcd.io
+  - cd.qdrant.io
   resources:
   - ocirepositories
   verbs:
@@ -64,7 +64,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - source.toolkit.fluxcd.io
+  - cd.qdrant.io
   resources:
   - ocirepositories/status
   verbs:

@@ -14,7 +14,7 @@ The following is an example of a HelmRelease which installs the
 
 ```yaml
 ---
-apiVersion: source.toolkit.fluxcd.io/v1
+apiVersion: cd.qdrant.io/v1
 kind: HelmRepository
 metadata:
   name: podinfo
@@ -23,7 +23,7 @@ spec:
   interval: 5m
   url: https://stefanprodan.github.io/podinfo
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: podinfo
@@ -229,7 +229,7 @@ HelmRelease object.
 #### OCIRepository reference example
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: cd.qdrant.io/v1beta2
 kind: OCIRepository
 metadata:
   name: podinfo
@@ -243,7 +243,7 @@ spec:
   ref:
     semver: ">= 6.0.0"
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: podinfo
@@ -261,7 +261,7 @@ spec:
 #### HelmChart reference example
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1
+apiVersion: cd.qdrant.io/v1
 kind: HelmChart
 metadata:
   name: podinfo
@@ -276,7 +276,7 @@ spec:
   valuesFiles:
     - values-prod.yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: podinfo
@@ -374,7 +374,7 @@ Defintions and the related controller must exist in the cluster.
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: backend
@@ -382,7 +382,7 @@ metadata:
 spec:
   # ...omitted for brevity   
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: frontend
@@ -721,7 +721,7 @@ causes the selector to be more specific:
 
 - `group` (Optional): Matches the `.apiVersion` group of resources while
   offering support for regular expressions. For example, `apps`,
-  `helm.toolkit.fluxcd.io` or `.*.toolkit.fluxcd.io`.
+  `cd.qdrant.io` or `.*.toolkit.fluxcd.io`.
 - `version` (Optional): Matches the `.apiVersion` version of resources while
   offering support for regular expressions. For example, `v1`, `v2beta2` or
   `v2beta[\d]`.
@@ -743,7 +743,7 @@ causes the selector to be more specific:
 #### Ignore annotation
 
 To exclude certain resources from the comparison, they can be labeled or
-annotated with `helm.toolkit.fluxcd.io/driftDetection: disabled`. Using
+annotated with `cd.qdrant.io/driftDetection: disabled`. Using
 [post-renderers](#post-renderers), this can be applied to any resource
 rendered by Helm.
 
@@ -758,7 +758,7 @@ spec:
               name: my-app
             patch: |
               - op: add
-                path: /metadata/annotations/helm.toolkit.fluxcd.io~1driftDetection
+                path: /metadata/annotations/cd.qdrant.io~1driftDetection
                 value: disabled
 ```
 
@@ -949,7 +949,7 @@ chart, you can set the `.spec.install.crds` and `.spec.upgrade.crds` policies to
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: my-operator
@@ -1036,7 +1036,7 @@ The Service Account can then be referenced in the HelmRelease:
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
  name: podinfo
@@ -1110,7 +1110,7 @@ spec:
 ---
 # ... unrelated Cluster API objects omitted for brevity ...
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: kube-prometheus-stack
@@ -1244,7 +1244,7 @@ In your YAML declaration:
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: <helmrelease-name>
@@ -1270,7 +1270,7 @@ In your YAML declaration, comment out (or remove) the field:
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: <helmrelease-name>
@@ -1411,15 +1411,15 @@ apiVersion: v1
 kind: Event
 metadata:
   annotations:
-    helm.toolkit.fluxcd.io/app-version: 6.6.1
-    helm.toolkit.fluxcd.io/revision: 6.6.1+0cc9a8446c95
-    helm.toolkit.fluxcd.io/oci-digest: sha256:0cc9a8446c95009ef382f5eade883a67c257f77d50f84e78ecef2aac9428d1e5
+    cd.qdrant.io/app-version: 6.6.1
+    cd.qdrant.io/revision: 6.6.1+0cc9a8446c95
+    cd.qdrant.io/oci-digest: sha256:0cc9a8446c95009ef382f5eade883a67c257f77d50f84e78ecef2aac9428d1e5
   creationTimestamp: "2024-05-07T05:02:34Z"
   name: podinfo.17cd1c4e15d474bb
   namespace: default
 firstTimestamp: "2024-05-07T05:02:34Z"
 involvedObject:
-  apiVersion: helm.toolkit.fluxcd.io/v2
+  apiVersion: cd.qdrant.io/v2
   kind: HelmRelease
   name: podinfo
   namespace: default
@@ -1446,7 +1446,7 @@ include the status of the tests which were run for each release.
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: <release-name>
