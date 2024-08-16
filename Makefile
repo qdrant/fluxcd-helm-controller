@@ -33,7 +33,7 @@ CRD_DEP_ROOT ?= $(BUILD_DIR)/config/crd/bases
 # Keep a record of the version of the downloaded source CRDs. It is used to
 # detect and download new CRDs when the SOURCE_VER changes.
 SOURCE_VER ?= $(shell go list -m all | grep github.com/fluxcd/source-controller/api | awk '{print $$2}')
-SOURCE_BRANCH ?= main
+SOURCE_BRANCH ?= d650fb97fa04e71a9607808189040502c928b5bf
 SOURCE_CRD_VER = $(CRD_DEP_ROOT)/.src-crd-$(SOURCE_VER)
 
 # HelmChart source CRD.

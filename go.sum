@@ -346,8 +346,8 @@ github.com/prometheus/procfs v0.0.2/go.mod h1:TjEm7ze935MbeOT/UhFTIMYKhuLP4wbCsT
 github.com/prometheus/procfs v0.0.3/go.mod h1:4A/X28fw3Fc593LaREMrKMqOKvUAntwMDaekg4FpcdQ=
 github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0learggepc=
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
-github.com/qdrant/fluxcd-source-controller/api v0.0.0-20240814110651-c292ee968c96 h1:VBdL7YZ2zFz8Zq/u8glT43lSmR3F+J+zzu3ZiMHU67w=
-github.com/qdrant/fluxcd-source-controller/api v0.0.0-20240814110651-c292ee968c96/go.mod h1:+tfd0vltjcVs/bbnq9AlYR9AAHSVfM/Z4v4TpQmdJf4=
+github.com/qdrant/fluxcd-source-controller/api v0.0.0-20240821122838-d650fb97fa04 h1:RP32aF/Z8oAB31CWytM5uPSm1EV5cKGuIstHVUTg2QA=
+github.com/qdrant/fluxcd-source-controller/api v0.0.0-20240821122838-d650fb97fa04/go.mod h1:tBdalWxrxxHAJRB9HiXXYRBQQGM8wDe+ngK7wL+BN6A=
 github.com/rogpeppe/go-internal v1.12.0 h1:exVL4IDcn6na9z1rAb56Vxr+CgyK3nn3O+epU5NdKM8=
 github.com/rogpeppe/go-internal v1.12.0/go.mod h1:E+RYuTGaKKdloAfM02xzb0FW3Paa99yedzYV+kq4uf4=
 github.com/rubenv/sql-migrate v1.5.2 h1:bMDqOnrJVV/6JQgQ/MxOpU+AdO8uzYYA/TxFUBzFtS0=
