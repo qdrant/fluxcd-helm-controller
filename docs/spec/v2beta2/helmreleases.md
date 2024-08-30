@@ -14,7 +14,7 @@ The following is an example of a HelmRelease which installs the
 
 ```yaml
 ---
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: cd.qdrant.io/v1beta2
 kind: HelmRepository
 metadata:
   name: podinfo
@@ -23,7 +23,7 @@ spec:
   interval: 5m
   url: https://stefanprodan.github.io/podinfo
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: podinfo
@@ -229,7 +229,7 @@ HelmRelease object.
 #### OCIRepository reference example
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: cd.qdrant.io/v1beta2
 kind: OCIRepository
 metadata:
   name: podinfo
@@ -240,7 +240,7 @@ spec:
   ref:
     tag: 6.6.0
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: podinfo
@@ -258,7 +258,7 @@ spec:
 #### HelmChart reference example
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: cd.qdrant.io/v1beta2
 kind: HelmChart
 metadata:
   name: podinfo
@@ -272,7 +272,7 @@ spec:
     name: podinfo
   version: '5.*'
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: podinfo
@@ -370,7 +370,7 @@ Defintions and the related controller must exist in the cluster.
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: backend
@@ -378,7 +378,7 @@ metadata:
 spec:
   # ...omitted for brevity   
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: frontend
@@ -717,7 +717,7 @@ causes the selector to be more specific:
 
 - `group` (Optional): Matches the `.apiVersion` group of resources while
   offering support for regular expressions. For example, `apps`,
-  `helm.toolkit.fluxcd.io` or `.*.toolkit.fluxcd.io`.
+  `cd.qdrant.io` or `.*.toolkit.fluxcd.io`.
 - `version` (Optional): Matches the `.apiVersion` version of resources while
   offering support for regular expressions. For example, `v1`, `v2beta2` or
   `v2beta[\d]`.
@@ -739,7 +739,7 @@ causes the selector to be more specific:
 #### Ignore annotation
 
 To exclude certain resources from the comparison, they can be labeled or
-annotated with `helm.toolkit.fluxcd.io/driftDetection: disabled`. Using
+annotated with `cd.qdrant.io/driftDetection: disabled`. Using
 [post-renderers](#post-renderers), this can be applied to any resource
 rendered by Helm.
 
@@ -754,7 +754,7 @@ spec:
               name: my-app
             patch: |
               - op: add
-                path: /metadata/annotations/helm.toolkit.fluxcd.io~1driftDetection
+                path: /metadata/annotations/cd.qdrant.io~1driftDetection
                 value: disabled
 ```
 
@@ -945,7 +945,7 @@ chart, you can set the `.spec.install.crds` and `.spec.upgrade.crds` policies to
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: my-operator
@@ -1032,7 +1032,7 @@ The Service Account can then be referenced in the HelmRelease:
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
  name: podinfo
@@ -1106,7 +1106,7 @@ spec:
 ---
 # ... unrelated Cluster API objects omitted for brevity ...
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: kube-prometheus-stack
@@ -1240,7 +1240,7 @@ In your YAML declaration:
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: <helmrelease-name>
@@ -1266,7 +1266,7 @@ In your YAML declaration, comment out (or remove) the field:
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: <helmrelease-name>
@@ -1404,7 +1404,7 @@ include the status of the tests which were run for each release.
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: cd.qdrant.io/v2beta2
 kind: HelmRelease
 metadata:
   name: <release-name>

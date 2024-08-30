@@ -2,16 +2,16 @@
 <p>Packages:</p>
 <ul class="simple">
 <li>
-<a href="#helm.toolkit.fluxcd.io%2fv2">helm.toolkit.fluxcd.io/v2</a>
+<a href="#cd.qdrant.io%2fv2">cd.qdrant.io/v2</a>
 </li>
 </ul>
-<h2 id="helm.toolkit.fluxcd.io/v2">helm.toolkit.fluxcd.io/v2</h2>
+<h2 id="cd.qdrant.io/v2">cd.qdrant.io/v2</h2>
 <p>Package v2 contains API Schema definitions for the helm v2 API group</p>
 Resource Types:
 <ul class="simple"><li>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmRelease">HelmRelease</a>
+<a href="#cd.qdrant.io/v2.HelmRelease">HelmRelease</a>
 </li></ul>
-<h3 id="helm.toolkit.fluxcd.io/v2.HelmRelease">HelmRelease
+<h3 id="cd.qdrant.io/v2.HelmRelease">HelmRelease
 </h3>
 <p>HelmRelease is the Schema for the helmreleases API</p>
 <div class="md-typeset__scrollwrap">
@@ -29,7 +29,7 @@ Resource Types:
 <code>apiVersion</code><br>
 string</td>
 <td>
-<code>helm.toolkit.fluxcd.io/v2</code>
+<code>cd.qdrant.io/v2</code>
 </td>
 </tr>
 <tr>
@@ -59,7 +59,7 @@ Refer to the Kubernetes API documentation for the fields of the
 <td>
 <code>spec</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">
 HelmReleaseSpec
 </a>
 </em>
@@ -72,7 +72,7 @@ HelmReleaseSpec
 <td>
 <code>chart</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplate">
+<a href="#cd.qdrant.io/v2.HelmChartTemplate">
 HelmChartTemplate
 </a>
 </em>
@@ -87,7 +87,7 @@ for this HelmRelease.</p>
 <td>
 <code>chartRef</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.CrossNamespaceSourceReference">
+<a href="#cd.qdrant.io/v2.CrossNamespaceSourceReference">
 CrossNamespaceSourceReference
 </a>
 </em>
@@ -264,7 +264,7 @@ available by e.g. post-install hooks.</p>
 <td>
 <code>driftDetection</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.DriftDetection">
+<a href="#cd.qdrant.io/v2.DriftDetection">
 DriftDetection
 </a>
 </em>
@@ -280,7 +280,7 @@ currently existing in the cluster.</p>
 <td>
 <code>install</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Install">
+<a href="#cd.qdrant.io/v2.Install">
 Install
 </a>
 </em>
@@ -294,7 +294,7 @@ Install
 <td>
 <code>upgrade</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Upgrade">
+<a href="#cd.qdrant.io/v2.Upgrade">
 Upgrade
 </a>
 </em>
@@ -308,7 +308,7 @@ Upgrade
 <td>
 <code>test</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Test">
+<a href="#cd.qdrant.io/v2.Test">
 Test
 </a>
 </em>
@@ -322,7 +322,7 @@ Test
 <td>
 <code>rollback</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Rollback">
+<a href="#cd.qdrant.io/v2.Rollback">
 Rollback
 </a>
 </em>
@@ -336,7 +336,7 @@ Rollback
 <td>
 <code>uninstall</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Uninstall">
+<a href="#cd.qdrant.io/v2.Uninstall">
 Uninstall
 </a>
 </em>
@@ -350,7 +350,7 @@ Uninstall
 <td>
 <code>valuesFrom</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.ValuesReference">
+<a href="#cd.qdrant.io/v2.ValuesReference">
 []ValuesReference
 </a>
 </em>
@@ -378,7 +378,7 @@ Kubernetes pkg/apis/apiextensions/v1.JSON
 <td>
 <code>postRenderers</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.PostRenderer">
+<a href="#cd.qdrant.io/v2.PostRenderer">
 []PostRenderer
 </a>
 </em>
@@ -396,7 +396,7 @@ of their definition.</p>
 <td>
 <code>status</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseStatus">
+<a href="#cd.qdrant.io/v2.HelmReleaseStatus">
 HelmReleaseStatus
 </a>
 </em>
@@ -408,20 +408,20 @@ HelmReleaseStatus
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.CRDsPolicy">CRDsPolicy
+<h3 id="cd.qdrant.io/v2.CRDsPolicy">CRDsPolicy
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.Install">Install</a>, 
-<a href="#helm.toolkit.fluxcd.io/v2.Upgrade">Upgrade</a>)
+<a href="#cd.qdrant.io/v2.Install">Install</a>, 
+<a href="#cd.qdrant.io/v2.Upgrade">Upgrade</a>)
 </p>
 <p>CRDsPolicy defines the install/upgrade approach to use for CRDs when
 installing or upgrading a HelmRelease.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.CrossNamespaceObjectReference">CrossNamespaceObjectReference
+<h3 id="cd.qdrant.io/v2.CrossNamespaceObjectReference">CrossNamespaceObjectReference
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplateSpec">HelmChartTemplateSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmChartTemplateSpec">HelmChartTemplateSpec</a>)
 </p>
 <p>CrossNamespaceObjectReference contains enough information to let you locate
 the typed referenced object at cluster level.</p>
@@ -485,11 +485,11 @@ string
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.CrossNamespaceSourceReference">CrossNamespaceSourceReference
+<h3 id="cd.qdrant.io/v2.CrossNamespaceSourceReference">CrossNamespaceSourceReference
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>CrossNamespaceSourceReference contains enough information to let you locate
 the typed referenced object at cluster level.</p>
@@ -554,11 +554,11 @@ resource object that contains the reference.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.DriftDetection">DriftDetection
+<h3 id="cd.qdrant.io/v2.DriftDetection">DriftDetection
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>DriftDetection defines the strategy for performing differential analysis and
 provides a way to define rules for ignoring specific changes during this
@@ -577,7 +577,7 @@ process.</p>
 <td>
 <code>mode</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.DriftDetectionMode">
+<a href="#cd.qdrant.io/v2.DriftDetectionMode">
 DriftDetectionMode
 </a>
 </em>
@@ -593,7 +593,7 @@ If not explicitly set, it defaults to DiffModeDisabled.</p>
 <td>
 <code>ignore</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.IgnoreRule">
+<a href="#cd.qdrant.io/v2.IgnoreRule">
 []IgnoreRule
 </a>
 </em>
@@ -608,20 +608,20 @@ during diffing.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.DriftDetectionMode">DriftDetectionMode
+<h3 id="cd.qdrant.io/v2.DriftDetectionMode">DriftDetectionMode
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.DriftDetection">DriftDetection</a>)
+<a href="#cd.qdrant.io/v2.DriftDetection">DriftDetection</a>)
 </p>
 <p>DriftDetectionMode represents the modes in which a controller can detect and
 handle differences between the manifest in the Helm storage and the resources
 currently existing in the cluster.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.Filter">Filter
+<h3 id="cd.qdrant.io/v2.Filter">Filter
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.Test">Test</a>)
+<a href="#cd.qdrant.io/v2.Test">Test</a>)
 </p>
 <p>Filter holds the configuration for individual Helm test filters.</p>
 <div class="md-typeset__scrollwrap">
@@ -661,11 +661,11 @@ bool
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.HelmChartTemplate">HelmChartTemplate
+<h3 id="cd.qdrant.io/v2.HelmChartTemplate">HelmChartTemplate
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>HelmChartTemplate defines the template from which the controller will
 generate a v1.HelmChart object in the same namespace as the referenced
@@ -684,7 +684,7 @@ v1.Source.</p>
 <td>
 <code>metadata</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplateObjectMeta">
+<a href="#cd.qdrant.io/v2.HelmChartTemplateObjectMeta">
 HelmChartTemplateObjectMeta
 </a>
 </em>
@@ -698,7 +698,7 @@ HelmChartTemplateObjectMeta
 <td>
 <code>spec</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplateSpec">
+<a href="#cd.qdrant.io/v2.HelmChartTemplateSpec">
 HelmChartTemplateSpec
 </a>
 </em>
@@ -736,7 +736,7 @@ v1beta2.Bucket sources. Defaults to latest when omitted.</p>
 <td>
 <code>sourceRef</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.CrossNamespaceObjectReference">
+<a href="#cd.qdrant.io/v2.CrossNamespaceObjectReference">
 CrossNamespaceObjectReference
 </a>
 </em>
@@ -806,7 +806,7 @@ bool
 <td>
 <code>verify</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplateVerification">
+<a href="#cd.qdrant.io/v2.HelmChartTemplateVerification">
 HelmChartTemplateVerification
 </a>
 </em>
@@ -828,11 +828,11 @@ are not verified.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.HelmChartTemplateObjectMeta">HelmChartTemplateObjectMeta
+<h3 id="cd.qdrant.io/v2.HelmChartTemplateObjectMeta">HelmChartTemplateObjectMeta
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplate">HelmChartTemplate</a>)
+<a href="#cd.qdrant.io/v2.HelmChartTemplate">HelmChartTemplate</a>)
 </p>
 <p>HelmChartTemplateObjectMeta defines the template for the ObjectMeta of a
 v1.HelmChart.</p>
@@ -879,11 +879,11 @@ More info: <a href="https://kubernetes.io/docs/concepts/overview/working-with-ob
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.HelmChartTemplateSpec">HelmChartTemplateSpec
+<h3 id="cd.qdrant.io/v2.HelmChartTemplateSpec">HelmChartTemplateSpec
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplate">HelmChartTemplate</a>)
+<a href="#cd.qdrant.io/v2.HelmChartTemplate">HelmChartTemplate</a>)
 </p>
 <p>HelmChartTemplateSpec defines the template from which the controller will
 generate a v1.HelmChartSpec object.</p>
@@ -925,7 +925,7 @@ v1beta2.Bucket sources. Defaults to latest when omitted.</p>
 <td>
 <code>sourceRef</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.CrossNamespaceObjectReference">
+<a href="#cd.qdrant.io/v2.CrossNamespaceObjectReference">
 CrossNamespaceObjectReference
 </a>
 </em>
@@ -995,7 +995,7 @@ bool
 <td>
 <code>verify</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplateVerification">
+<a href="#cd.qdrant.io/v2.HelmChartTemplateVerification">
 HelmChartTemplateVerification
 </a>
 </em>
@@ -1014,11 +1014,11 @@ are not verified.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.HelmChartTemplateVerification">HelmChartTemplateVerification
+<h3 id="cd.qdrant.io/v2.HelmChartTemplateVerification">HelmChartTemplateVerification
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplateSpec">HelmChartTemplateSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmChartTemplateSpec">HelmChartTemplateSpec</a>)
 </p>
 <p>HelmChartTemplateVerification verifies the authenticity of an OCI Helm chart.</p>
 <div class="md-typeset__scrollwrap">
@@ -1061,11 +1061,11 @@ trusted public keys.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec
+<h3 id="cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmRelease">HelmRelease</a>)
+<a href="#cd.qdrant.io/v2.HelmRelease">HelmRelease</a>)
 </p>
 <p>HelmReleaseSpec defines the desired state of a Helm release.</p>
 <div class="md-typeset__scrollwrap">
@@ -1082,7 +1082,7 @@ trusted public keys.</p>
 <td>
 <code>chart</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmChartTemplate">
+<a href="#cd.qdrant.io/v2.HelmChartTemplate">
 HelmChartTemplate
 </a>
 </em>
@@ -1097,7 +1097,7 @@ for this HelmRelease.</p>
 <td>
 <code>chartRef</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.CrossNamespaceSourceReference">
+<a href="#cd.qdrant.io/v2.CrossNamespaceSourceReference">
 CrossNamespaceSourceReference
 </a>
 </em>
@@ -1274,7 +1274,7 @@ available by e.g. post-install hooks.</p>
 <td>
 <code>driftDetection</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.DriftDetection">
+<a href="#cd.qdrant.io/v2.DriftDetection">
 DriftDetection
 </a>
 </em>
@@ -1290,7 +1290,7 @@ currently existing in the cluster.</p>
 <td>
 <code>install</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Install">
+<a href="#cd.qdrant.io/v2.Install">
 Install
 </a>
 </em>
@@ -1304,7 +1304,7 @@ Install
 <td>
 <code>upgrade</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Upgrade">
+<a href="#cd.qdrant.io/v2.Upgrade">
 Upgrade
 </a>
 </em>
@@ -1318,7 +1318,7 @@ Upgrade
 <td>
 <code>test</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Test">
+<a href="#cd.qdrant.io/v2.Test">
 Test
 </a>
 </em>
@@ -1332,7 +1332,7 @@ Test
 <td>
 <code>rollback</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Rollback">
+<a href="#cd.qdrant.io/v2.Rollback">
 Rollback
 </a>
 </em>
@@ -1346,7 +1346,7 @@ Rollback
 <td>
 <code>uninstall</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Uninstall">
+<a href="#cd.qdrant.io/v2.Uninstall">
 Uninstall
 </a>
 </em>
@@ -1360,7 +1360,7 @@ Uninstall
 <td>
 <code>valuesFrom</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.ValuesReference">
+<a href="#cd.qdrant.io/v2.ValuesReference">
 []ValuesReference
 </a>
 </em>
@@ -1388,7 +1388,7 @@ Kubernetes pkg/apis/apiextensions/v1.JSON
 <td>
 <code>postRenderers</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.PostRenderer">
+<a href="#cd.qdrant.io/v2.PostRenderer">
 []PostRenderer
 </a>
 </em>
@@ -1403,11 +1403,11 @@ of their definition.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.HelmReleaseStatus">HelmReleaseStatus
+<h3 id="cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmRelease">HelmRelease</a>)
+<a href="#cd.qdrant.io/v2.HelmRelease">HelmRelease</a>)
 </p>
 <p>HelmReleaseStatus defines the observed state of a HelmRelease.</p>
 <div class="md-typeset__scrollwrap">
@@ -1502,7 +1502,7 @@ current release.</p>
 <td>
 <code>history</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Snapshots">
+<a href="#cd.qdrant.io/v2.Snapshots">
 Snapshots
 </a>
 </em>
@@ -1517,7 +1517,7 @@ up to the last successfully completed release.</p>
 <td>
 <code>lastAttemptedReleaseAction</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.ReleaseAction">
+<a href="#cd.qdrant.io/v2.ReleaseAction">
 ReleaseAction
 </a>
 </em>
@@ -1679,11 +1679,11 @@ github.com/fluxcd/pkg/apis/meta.ReconcileRequestStatus
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.IgnoreRule">IgnoreRule
+<h3 id="cd.qdrant.io/v2.IgnoreRule">IgnoreRule
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.DriftDetection">DriftDetection</a>)
+<a href="#cd.qdrant.io/v2.DriftDetection">DriftDetection</a>)
 </p>
 <p>IgnoreRule defines a rule to selectively disregard specific changes during
 the drift detection process.</p>
@@ -1730,11 +1730,11 @@ objects within the manifest of the Helm release.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.Install">Install
+<h3 id="cd.qdrant.io/v2.Install">Install
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>Install holds the configuration for Helm install actions performed for this
 HelmRelease.</p>
@@ -1768,7 +1768,7 @@ Jobs for hooks) during the performance of a Helm install action. Defaults to
 <td>
 <code>remediation</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.InstallRemediation">
+<a href="#cd.qdrant.io/v2.InstallRemediation">
 InstallRemediation
 </a>
 </em>
@@ -1861,7 +1861,7 @@ CRDs are installed if not already present.</p>
 <td>
 <code>crds</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.CRDsPolicy">
+<a href="#cd.qdrant.io/v2.CRDsPolicy">
 CRDsPolicy
 </a>
 </em>
@@ -1900,11 +1900,11 @@ On uninstall, the namespace will not be garbage collected.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.InstallRemediation">InstallRemediation
+<h3 id="cd.qdrant.io/v2.InstallRemediation">InstallRemediation
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.Install">Install</a>)
+<a href="#cd.qdrant.io/v2.Install">Install</a>)
 </p>
 <p>InstallRemediation holds the configuration for Helm install remediation.</p>
 <div class="md-typeset__scrollwrap">
@@ -1962,11 +1962,11 @@ no retries remain. Defaults to &lsquo;false&rsquo;.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.Kustomize">Kustomize
+<h3 id="cd.qdrant.io/v2.Kustomize">Kustomize
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.PostRenderer">PostRenderer</a>)
+<a href="#cd.qdrant.io/v2.PostRenderer">PostRenderer</a>)
 </p>
 <p>Kustomize Helm PostRenderer specification.</p>
 <div class="md-typeset__scrollwrap">
@@ -2014,11 +2014,11 @@ patch, but this operator is simpler to specify.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.PostRenderer">PostRenderer
+<h3 id="cd.qdrant.io/v2.PostRenderer">PostRenderer
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>PostRenderer contains a Helm PostRenderer specification.</p>
 <div class="md-typeset__scrollwrap">
@@ -2035,7 +2035,7 @@ patch, but this operator is simpler to specify.</p>
 <td>
 <code>kustomize</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Kustomize">
+<a href="#cd.qdrant.io/v2.Kustomize">
 Kustomize
 </a>
 </em>
@@ -2049,30 +2049,30 @@ Kustomize
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.ReleaseAction">ReleaseAction
+<h3 id="cd.qdrant.io/v2.ReleaseAction">ReleaseAction
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
 </p>
 <p>ReleaseAction is the action to perform a Helm release.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.Remediation">Remediation
+<h3 id="cd.qdrant.io/v2.Remediation">Remediation
 </h3>
 <p>Remediation defines a consistent interface for InstallRemediation and
 UpgradeRemediation.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.RemediationStrategy">RemediationStrategy
+<h3 id="cd.qdrant.io/v2.RemediationStrategy">RemediationStrategy
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.UpgradeRemediation">UpgradeRemediation</a>)
+<a href="#cd.qdrant.io/v2.UpgradeRemediation">UpgradeRemediation</a>)
 </p>
 <p>RemediationStrategy returns the strategy to use to remediate a failed install
 or upgrade.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.Rollback">Rollback
+<h3 id="cd.qdrant.io/v2.Rollback">Rollback
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>Rollback holds the configuration for Helm rollback actions for this
 HelmRelease.</p>
@@ -2181,7 +2181,7 @@ rollback action when it fails.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.Snapshot">Snapshot
+<h3 id="cd.qdrant.io/v2.Snapshot">Snapshot
 </h3>
 <p>Snapshot captures a point-in-time copy of the status information for a Helm release,
 as managed by the controller.</p>
@@ -2357,7 +2357,7 @@ Kubernetes meta/v1.Time
 <td>
 <code>testHooks</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.TestHookStatus">
+<a href="#cd.qdrant.io/v2.TestHookStatus">
 TestHookStatus
 </a>
 </em>
@@ -2384,18 +2384,18 @@ string
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.Snapshots">Snapshots
+<h3 id="cd.qdrant.io/v2.Snapshots">Snapshots
 (<code>[]*./api/v2.Snapshot</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
 </p>
 <p>Snapshots is a list of Snapshot objects.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.Test">Test
+<h3 id="cd.qdrant.io/v2.Test">Test
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>Test holds the configuration for Helm test actions for this HelmRelease.</p>
 <div class="md-typeset__scrollwrap">
@@ -2454,7 +2454,7 @@ actions in &lsquo;Install.IgnoreTestFailures&rsquo; and &lsquo;Upgrade.IgnoreTes
 <td>
 <code>filters</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.Filter">
+<a href="#cd.qdrant.io/v2.Filter">
 Filter
 </a>
 </em>
@@ -2467,11 +2467,11 @@ Filter
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.TestHookStatus">TestHookStatus
+<h3 id="cd.qdrant.io/v2.TestHookStatus">TestHookStatus
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.Snapshot">Snapshot</a>)
+<a href="#cd.qdrant.io/v2.Snapshot">Snapshot</a>)
 </p>
 <p>TestHookStatus holds the status information for a test hook as observed
 to be run by the controller.</p>
@@ -2529,11 +2529,11 @@ string
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.Uninstall">Uninstall
+<h3 id="cd.qdrant.io/v2.Uninstall">Uninstall
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>Uninstall holds the configuration for Helm uninstall actions for this
 HelmRelease.</p>
@@ -2618,11 +2618,11 @@ a Helm uninstall is performed.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.Upgrade">Upgrade
+<h3 id="cd.qdrant.io/v2.Upgrade">Upgrade
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>Upgrade holds the configuration for Helm upgrade actions for this
 HelmRelease.</p>
@@ -2656,7 +2656,7 @@ Jobs for hooks) during the performance of a Helm upgrade action. Defaults to
 <td>
 <code>remediation</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.UpgradeRemediation">
+<a href="#cd.qdrant.io/v2.UpgradeRemediation">
 UpgradeRemediation
 </a>
 </em>
@@ -2761,7 +2761,7 @@ upgrade action when it fails.</p>
 <td>
 <code>crds</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.CRDsPolicy">
+<a href="#cd.qdrant.io/v2.CRDsPolicy">
 CRDsPolicy
 </a>
 </em>
@@ -2785,11 +2785,11 @@ option users can opt-in to CRD upgrade, which is not (yet) natively supported by
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.UpgradeRemediation">UpgradeRemediation
+<h3 id="cd.qdrant.io/v2.UpgradeRemediation">UpgradeRemediation
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.Upgrade">Upgrade</a>)
+<a href="#cd.qdrant.io/v2.Upgrade">Upgrade</a>)
 </p>
 <p>UpgradeRemediation holds the configuration for Helm upgrade remediation.</p>
 <div class="md-typeset__scrollwrap">
@@ -2847,7 +2847,7 @@ no retries remain. Defaults to &lsquo;false&rsquo; unless &lsquo;Retries&rsquo; 
 <td>
 <code>strategy</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.RemediationStrategy">
+<a href="#cd.qdrant.io/v2.RemediationStrategy">
 RemediationStrategy
 </a>
 </em>
@@ -2861,11 +2861,11 @@ RemediationStrategy
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.ValuesReference">ValuesReference
+<h3 id="cd.qdrant.io/v2.ValuesReference">ValuesReference
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>ValuesReference contains a reference to a resource containing Helm values,
 and optionally the key they can be found at.</p>

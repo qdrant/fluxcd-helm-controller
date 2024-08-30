@@ -6,6 +6,42 @@
 [![license](https://img.shields.io/github/license/fluxcd/helm-controller.svg)](https://github.com/fluxcd/helm-controller/blob/main/LICENSE)
 [![release](https://img.shields.io/github/release/fluxcd/helm-controller/all.svg)](https://github.com/fluxcd/helm-controller/releases)
 
+## About this fork
+
+This fork is used by the
+[qdrant-cloud-agent](https://github.com/qdrant/qdrant-cloud-agent/). The main
+reason behind forking the upstream project is to be able to distribute the CRDs of this
+project without risk of collision in case the customer is using Flux CD in their
+K8s cluster. The main change between the fork and upstream consist of renaming the
+API group names, replacing the ones from fluxcd (ex: `helm.toolkit.fluxcd.io`)
+by our custom ones.
+
+### Maintaining the fork up to date
+
+- Configure and fetch upstream/main.
+- Create your development branch from origin/main and merge upstream/main into
+  it. You can run the merge with `-X theirs` option.
+- Solve the git conflicts if any.
+- As there might be new files or content added in upstream, we might need to
+  rename groups again. You can do that executing
+  `./scripts/rename-api-groups.sh`.
+- You are probably updating [source-controller](https://github.com/fluxcd/source-controller) as well. If that's the case, you
+  need to update the dependency in this project. 
+  - Update the `SOURCE_BRANCH` var in the Makefile with the new commit
+  - Update go.mod: `go mod edit -replace github.com/fluxcd/source-controller/api=github.com/qdrant/fluxcd-source-controller/api@PLACE_HERE_THE_NEW_COMMIT_SHA`
+- Run `go mod tidy` to clean up the dependencies and execute the tests of the project with `make test`.
+- Ideally, they are passing. Otherwise, you need to work on fixing any possible
+  issue.
+- Push your development branch. After that, you would need to test it using it
+  in the cloud-agent to confirm everything works as expected.
+- Once you confirm it works fine, create a PR for review.
+- **Note for the reviewer:** The merge commit from upstream/main doesn't make
+  sense to review it. Focus on the commits with the changes relevant for the
+  project.
+
+
+---
+
 The helm-controller is a Kubernetes operator, allowing one to declaratively
 manage Helm chart releases. It is part of a composable [GitOps toolkit](https://fluxcd.io/flux/components)
 and depends on [source-controller][] to acquire the Helm charts from Helm
