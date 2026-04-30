@@ -17,8 +17,9 @@ limitations under the License.
 package kube
 
 import (
-	"github.com/fluxcd/pkg/runtime/client"
 	"testing"
+
+	"github.com/fluxcd/pkg/runtime/client"
 
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -63,7 +64,7 @@ func TestConfigFromSecret(t *testing.T) {
 				DefaultKubeConfigSecretKeyExt: []byte("bad"),
 			},
 		}
-		got, err := ConfigFromSecret(secret, "", client.KubeConfigOptions{})
+		got, err := ConfigFromSecret(t.Context(), secret, "", client.KubeConfigOptions{})
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(got).ToNot(BeNil())
 	})
@@ -80,7 +81,7 @@ func TestConfigFromSecret(t *testing.T) {
 				DefaultKubeConfigSecretKeyExt: []byte(kubeCfg),
 			},
 		}
-		got, err := ConfigFromSecret(secret, "", client.KubeConfigOptions{})
+		got, err := ConfigFromSecret(t.Context(), secret, "", client.KubeConfigOptions{})
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(got).ToNot(BeNil())
 	})
@@ -98,7 +99,7 @@ func TestConfigFromSecret(t *testing.T) {
 				key: []byte(kubeCfg),
 			},
 		}
-		got, err := ConfigFromSecret(secret, key, client.KubeConfigOptions{})
+		got, err := ConfigFromSecret(t.Context(), secret, key, client.KubeConfigOptions{})
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(got).ToNot(BeNil())
 	})
@@ -114,7 +115,7 @@ func TestConfigFromSecret(t *testing.T) {
 			},
 			Data: map[string][]byte{},
 		}
-		got, err := ConfigFromSecret(secret, key, client.KubeConfigOptions{})
+		got, err := ConfigFromSecret(t.Context(), secret, key, client.KubeConfigOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(got).To(BeNil())
 		g.Expect(err.Error()).To(ContainSubstring("secret 'vault/super-secret' does not contain a 'black-hole' key "))
@@ -133,7 +134,7 @@ func TestConfigFromSecret(t *testing.T) {
 				key: nil,
 			},
 		}
-		got, err := ConfigFromSecret(secret, key, client.KubeConfigOptions{})
+		got, err := ConfigFromSecret(t.Context(), secret, key, client.KubeConfigOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(got).To(BeNil())
 		g.Expect(err.Error()).To(ContainSubstring("does not contain a 'void' key with data"))
@@ -150,7 +151,7 @@ func TestConfigFromSecret(t *testing.T) {
 			Data: map[string][]byte{},
 		}
 
-		got, err := ConfigFromSecret(secret, "", client.KubeConfigOptions{})
+		got, err := ConfigFromSecret(t.Context(), secret, "", client.KubeConfigOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(got).To(BeNil())
 		g.Expect(err.Error()).To(ContainSubstring("does not contain a 'value' or 'value.yaml'"))
@@ -159,7 +160,7 @@ func TestConfigFromSecret(t *testing.T) {
 	t.Run("nil secret", func(t *testing.T) {
 		g := NewWithT(t)
 
-		got, err := ConfigFromSecret(nil, "", client.KubeConfigOptions{})
+		got, err := ConfigFromSecret(t.Context(), nil, "", client.KubeConfigOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(got).To(BeNil())
 		g.Expect(err.Error()).To(ContainSubstring("secret is nil"))
@@ -178,7 +179,7 @@ func TestConfigFromSecret(t *testing.T) {
 			},
 		}
 
-		got, err := ConfigFromSecret(secret, "", client.KubeConfigOptions{})
+		got, err := ConfigFromSecret(t.Context(), secret, "", client.KubeConfigOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(got).To(BeNil())
 		g.Expect(err.Error()).To(ContainSubstring("couldn't get version/kind"))
@@ -196,7 +197,7 @@ func TestConfigFromSecret(t *testing.T) {
 				DefaultKubeConfigSecretKey: []byte(kubeCfg),
 			},
 		}
-		got, err := ConfigFromSecret(secret, "", client.KubeConfigOptions{
+		got, err := ConfigFromSecret(t.Context(), secret, "", client.KubeConfigOptions{
 			UserAgent: "test",
 		})
 		g.Expect(err).ToNot(HaveOccurred())

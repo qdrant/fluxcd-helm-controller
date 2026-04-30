@@ -20,17 +20,17 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
-	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/fluxcd/pkg/chartutil"
 	"github.com/fluxcd/pkg/runtime/conditions"
-	"github.com/fluxcd/pkg/runtime/logger"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
-	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
 )
 
@@ -53,21 +53,23 @@ import (
 // The caller is assumed to have verified the integrity of Request.Object using
 // e.g. action.VerifySnapshot before calling Reconcile.
 type Upgrade struct {
-	configFactory *action.ConfigFactory
-	eventRecorder record.EventRecorder
+	configFactory           *action.ConfigFactory
+	eventRecorder           record.EventRecorder
+	defaultToRetryOnFailure bool
 }
 
 // NewUpgrade returns a new Upgrade reconciler configured with the provided
 // values.
-func NewUpgrade(cfg *action.ConfigFactory, recorder record.EventRecorder) *Upgrade {
-	return &Upgrade{configFactory: cfg, eventRecorder: recorder}
+func NewUpgrade(cfg *action.ConfigFactory, recorder record.EventRecorder, defaultToRetryOnFailure bool) *Upgrade {
+	return &Upgrade{configFactory: cfg, eventRecorder: recorder, defaultToRetryOnFailure: defaultToRetryOnFailure}
 }
 
 func (r *Upgrade) Reconcile(ctx context.Context, req *Request) error {
 	var (
-		logBuf      = action.NewLogBuffer(action.NewDebugLog(ctrl.LoggerFrom(ctx).V(logger.DebugLevel)), 10)
+		logBuf      = action.NewDebugLogBuffer(ctx)
 		obsReleases = make(observedReleases)
-		cfg         = r.configFactory.Build(logBuf.Log, observeRelease(obsReleases))
+		cfg         = r.configFactory.Build(logBuf, observeRelease(obsReleases), observeInventory(req.Object, req.Chart, r.configFactory.Getter, r.eventRecorder))
+		startTime   = time.Now()
 	)
 
 	defer summarize(req)
@@ -82,8 +84,13 @@ func (r *Upgrade) Reconcile(ctx context.Context, req *Request) error {
 	// Run the Helm upgrade action.
 	_, err := action.Upgrade(ctx, cfg, req.Object, req.Chart, req.Values)
 
+	// Record the action duration in status.
+	req.Object.Status.LastAttemptedReleaseActionDuration = &metav1.Duration{Duration: time.Since(startTime)}
+
 	// Record the history of releases observed during the upgrade.
-	obsReleases.recordOnObject(req.Object, mutateOCIDigest)
+	obsReleases.recordOnObject(req.Object,
+		mutateOCIDigest,
+		mutateAction(v2.ReleaseActionUpgrade))
 
 	if err != nil {
 		r.failure(req, logBuf, err)
@@ -167,6 +174,12 @@ func (r *Upgrade) success(req *Request) {
 	if req.Object.GetTest().Enable && !cur.HasBeenTested() {
 		conditions.MarkUnknown(req.Object, v2.TestSuccessCondition, "AwaitingTests", fmtTestPending,
 			cur.FullReleaseName(), cur.VersionedChartName())
+	}
+
+	// Failures are only relevant while the release is failed
+	// when a retry strategy is configured.
+	if req.Object.GetUpgrade().GetRetry(r.defaultToRetryOnFailure) != nil {
+		req.Object.Status.ClearFailures()
 	}
 
 	// Record event.

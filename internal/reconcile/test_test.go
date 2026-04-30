@@ -24,10 +24,11 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	helmrelease "helm.sh/helm/v3/pkg/release"
-	helmreleaseutil "helm.sh/helm/v3/pkg/releaseutil"
-	helmstorage "helm.sh/helm/v3/pkg/storage"
-	helmdriver "helm.sh/helm/v3/pkg/storage/driver"
+	helmreleasecommon "helm.sh/helm/v4/pkg/release/common"
+	helmrelease "helm.sh/helm/v4/pkg/release/v1"
+	helmreleaseutil "helm.sh/helm/v4/pkg/release/v1/util"
+	helmstorage "helm.sh/helm/v4/pkg/storage"
+	helmdriver "helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
@@ -36,9 +37,10 @@ import (
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/conditions"
 
+	"github.com/fluxcd/pkg/chartutil"
+
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
-	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
 	"github.com/fluxcd/helm-controller/internal/release"
 	"github.com/fluxcd/helm-controller/internal/testutil"
@@ -117,7 +119,7 @@ func TestTest_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(testutil.ChartWithTestHook()),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}, testutil.ReleaseWithTestHook()),
 				}
 			},
@@ -148,7 +150,7 @@ func TestTest_Reconcile(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 						Chart:     testutil.BuildChart(),
 					}),
 				}
@@ -180,7 +182,7 @@ func TestTest_Reconcile(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 						Chart:     testutil.BuildChart(testutil.ChartWithFailingTestHook()),
 					}, testutil.ReleaseWithFailingTestHook()),
 				}
@@ -196,9 +198,9 @@ func TestTest_Reconcile(t *testing.T) {
 			},
 			expectConditions: []metav1.Condition{
 				*conditions.FalseCondition(meta.ReadyCondition, v2.TestFailedReason,
-					"timed out waiting for the condition"),
+					"ontext deadline exceeded"),
 				*conditions.FalseCondition(v2.TestSuccessCondition, v2.TestFailedReason,
-					"timed out waiting for the condition"),
+					"ontext deadline exceeded"),
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				withTests := release.ObservedToSnapshot(release.ObserveRelease(releases[0]))
@@ -217,7 +219,7 @@ func TestTest_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(testutil.ChartWithTestHook()),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}, testutil.ReleaseWithTestHook()),
 				}
 			},
@@ -233,14 +235,14 @@ func TestTest_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(testutil.ChartWithTestHook()),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}, testutil.ReleaseWithTestHook()),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   2,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -253,9 +255,9 @@ func TestTest_Reconcile(t *testing.T) {
 			},
 			expectConditions: []metav1.Condition{
 				*conditions.FalseCondition(meta.ReadyCondition, v2.TestFailedReason,
-					ErrReleaseMismatch.Error()),
+					"%s", ErrReleaseMismatch.Error()),
 				*conditions.FalseCondition(v2.TestSuccessCondition, v2.TestFailedReason,
-					ErrReleaseMismatch.Error()),
+					"%s", ErrReleaseMismatch.Error()),
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
@@ -288,7 +290,7 @@ func TestTest_Reconcile(t *testing.T) {
 					ReleaseName:      mockReleaseName,
 					TargetNamespace:  releaseNamespace,
 					StorageNamespace: releaseNamespace,
-					Timeout:          &metav1.Duration{Duration: 100 * time.Millisecond},
+					Timeout:          &metav1.Duration{Duration: 200 * time.Millisecond},
 					Test: &v2.Test{
 						Enable: true,
 					},
@@ -330,7 +332,7 @@ func TestTest_Reconcile(t *testing.T) {
 
 			g.Expect(obj.Status.Conditions).To(conditions.MatchConditions(tt.expectConditions))
 
-			releases, _ = store.History(mockReleaseName)
+			releases, _ = storeHistory(store, mockReleaseName)
 			helmreleaseutil.SortByRevision(releases)
 
 			if tt.expectHistory != nil {
@@ -406,6 +408,31 @@ func Test_observeTest(t *testing.T) {
 		g.Expect(obj.Status.History).To(testutil.Equal(v2.Snapshots{
 			expect,
 		}))
+	})
+
+	t.Run("test with current preserves action", func(t *testing.T) {
+		g := NewWithT(t)
+
+		obj := &v2.HelmRelease{
+			Status: v2.HelmReleaseStatus{
+				History: v2.Snapshots{
+					&v2.Snapshot{
+						Name:      mockReleaseName,
+						Namespace: mockReleaseNamespace,
+						Version:   1,
+						Action:    v2.ReleaseActionInstall,
+					},
+				},
+			},
+		}
+		rls := testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+			Name:      mockReleaseName,
+			Namespace: mockReleaseNamespace,
+			Version:   1,
+		}, testutil.ReleaseWithHooks(testHookFixtures))
+
+		observeTest(obj)(rls)
+		g.Expect(obj.Status.History.Latest().Action).To(Equal(v2.ReleaseActionInstall))
 	})
 
 	t.Run("test targeting different version than latest", func(t *testing.T) {
@@ -493,7 +520,7 @@ func TestTest_failure(t *testing.T) {
 			err.Error())
 
 		g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-			*conditions.FalseCondition(v2.TestSuccessCondition, v2.TestFailedReason, expectMsg),
+			*conditions.FalseCondition(v2.TestSuccessCondition, v2.TestFailedReason, "%s", expectMsg),
 		}))
 		g.Expect(req.Object.Status.Failures).To(Equal(int64(1)))
 		g.Expect(req.Object.Status.InstallFailures).To(BeZero())
@@ -592,7 +619,7 @@ func TestTest_success(t *testing.T) {
 			"2 test hooks completed successfully")
 
 		g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-			*conditions.TrueCondition(v2.TestSuccessCondition, v2.TestSucceededReason, expectMsg),
+			*conditions.TrueCondition(v2.TestSuccessCondition, v2.TestSucceededReason, "%s", expectMsg),
 		}))
 		g.Expect(req.Object.Status.Failures).To(Equal(int64(0)))
 		g.Expect(recorder.GetEvents()).To(ConsistOf([]corev1.Event{

@@ -56,8 +56,9 @@ rules:
   - patch
   - update
 - apiGroups:
-  - cd.qdrant.io
+  - source.toolkit.fluxcd.io
   resources:
+  - helmcharts
   - ocirepositories
   verbs:
   - get
@@ -66,6 +67,7 @@ rules:
 - apiGroups:
   - cd.qdrant.io
   resources:
+  - helmcharts/status
   - ocirepositories/status
   verbs:
   - get

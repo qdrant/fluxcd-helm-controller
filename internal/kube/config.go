@@ -17,6 +17,7 @@ limitations under the License.
 package kube
 
 import (
+	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -40,7 +41,7 @@ const (
 // given Secret, or attempts to load the data from the default `value` and
 // `value.yaml` keys. If a Secret is provided but no key with data can be
 // found, an error is returned.
-func ConfigFromSecret(secret *corev1.Secret, key string, opts client.KubeConfigOptions) (*rest.Config, error) {
+func ConfigFromSecret(ctx context.Context, secret *corev1.Secret, key string, opts client.KubeConfigOptions) (*rest.Config, error) {
 	if secret == nil {
 		return nil, fmt.Errorf("KubeConfig secret is nil")
 	}
@@ -68,6 +69,6 @@ func ConfigFromSecret(secret *corev1.Secret, key string, opts client.KubeConfigO
 	if err != nil {
 		return nil, fmt.Errorf("failed to load KubeConfig from secret '%s': %w", secretName, err)
 	}
-	cfg = client.KubeConfig(cfg, opts)
+	cfg = client.KubeConfig(ctx, cfg, opts)
 	return cfg, nil
 }

@@ -20,7 +20,7 @@ metadata:
   name: podinfo
   namespace: default
 spec:
-  interval: 5m
+  interval: 15m
   url: https://stefanprodan.github.io/podinfo
 ---
 apiVersion: cd.qdrant.io/v2
@@ -29,7 +29,7 @@ metadata:
   name: podinfo
   namespace: default
 spec:
-  interval: 10m
+  interval: 15m
   timeout: 5m
   chart:
     spec:
@@ -205,17 +205,25 @@ HelmRelease object.
 
 ### Chart reference
 
-`.spec.chartRef` is an optional field used to refer to an [OCIRepository resource](https://fluxcd.io/flux/components/source/ocirepositories/) or a [HelmChart resource](https://fluxcd.io/flux/components/source/helmcharts/)
-from which to fetch the Helm chart. The chart is fetched by the controller with the
-information provided by `.status.artifact` of the referenced resource.
+`.spec.chartRef` is an optional field used to refer to the Source object which has an
+Artifact containing the Helm chart. It has two required fields:
 
-For a referenced resource of `kind OCIRepository`, the chart version of the last
+- `kind`: The Kind of the referred Source object. Supported Source types:
+  + [OCIRepository](https://fluxcd.io/flux/components/source/ocirepositories/)
+  + [HelmChart](https://fluxcd.io/flux/components/source/helmcharts/)
+  + [ExternalArtifact](https://fluxcd.io/flux/components/source/externalartifacts/) (requires `--feature-gates=ExternalArtifact=true` flag)
+- `name`: The Name of the referred Source object.
+
+For a referenced resource of kind `OCIRepository`, the chart version of the last
 release attempt is reported in `.status.lastAttemptedRevision`. The version is in
 the format `<version>+<digest[0:12]>`. The digest of the OCI artifact is appended
 to the version to ensure that a change in the artifact content triggers a new release.
 The controller will automatically perform a Helm upgrade when the `OCIRepository`
 detects a new digest in the OCI artifact stored in registry, even if the version
 inside `Chart.yaml` is unchanged.
+
+**Note:** Disabling the appending of the digest to the chart version can be done
+with the `--feature-gates=DisableChartDigestTracking=true` controller flag.
 
 **Warning:** One of `.spec.chart` or `.spec.chartRef` must be set, but not both.
 When switching from `.spec.chart` to `.spec.chartRef`, the controller will perform
@@ -229,7 +237,7 @@ HelmRelease object.
 #### OCIRepository reference example
 
 ```yaml
-apiVersion: cd.qdrant.io/v1beta2
+apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:
   name: podinfo
@@ -393,11 +401,58 @@ spec:
     - name: backend
 ```
 
-**Note:** This does not account for upgrade ordering. Kubernetes only allows
-applying one resource (HelmRelease in this case) at a time, so there is no
-way for the controller to know when a dependency HelmRelease may be updated.
-Also, circular dependencies between HelmRelease resources must be avoided,
+**Note:** Circular dependencies between HelmRelease resources must be avoided,
 otherwise the interdependent HelmRelease resources will never be reconciled.
+
+#### Dependency Ready Expression
+
+`.spec.dependsOn[].readyExpr` is an optional field that can be used to define a CEL expression
+to determine the readiness of a HelmRelease dependency.
+
+This is helpful for when custom logic is needed to determine if a dependency is ready.
+For example, when performing a lockstep upgrade, the `readyExpr` can be used to
+verify that a dependency has a matching version in values before proceeding with the
+reconciliation of the dependent HelmRelease.
+
+```yaml
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: backend
+  namespace: default
+spec:
+  # ...omitted for brevity
+  values: 
+    app:
+      version: v1.2.3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: frontend
+  namespace: default
+spec:
+  # ...omitted for brevity
+  values:
+    app:
+      version: v1.2.3
+  dependsOn:
+    - name: backend
+      readyExpr: >
+        dep.spec.values.app.version == self.spec.values.app.version &&
+        dep.status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True') &&
+        dep.metadata.generation == dep.status.observedGeneration
+```
+
+The CEL expression contains the following variables:
+
+- `dep`: The dependency HelmRelease object being evaluated.
+- `self`: The HelmRelease object being reconciled.
+
+**Note:** When `readyExpr` is specified, the built-in readiness check is replaced by the logic
+defined in the CEL expression. You can configure the controller to run both the CEL expression
+evaluation and the built-in readiness check, with the `AdditiveCELDependencyCheck`
+[feature gate](https://fluxcd.io/flux/components/helm/options/#feature-gates).
 
 ### Values
 
@@ -413,7 +468,8 @@ Changes to the combined values will trigger a new Helm release.
 `.spec.valuesFrom` is an optional list to refer to ConfigMap and Secret
 resources from which to take values. The values are merged in the order given,
 with the later values overwriting earlier, and then [inline values](#inline-values)
-overwriting those.
+overwriting those. When `targetPath` is set, it will overwrite everything before,
+including inline values.
 
 An item on the list offers the following subkeys:
 
@@ -454,6 +510,10 @@ a list). You can read more about the available formats and limitations in the
 For JSON strings, the [limitations are the same as while using `helm`](https://github.com/helm/helm/issues/5618)
 and require you to escape the full JSON string (including `=`, `[`, `,`, `.`).
 
+To make a HelmRelease react immediately to changes in the referenced Secret
+or ConfigMap see [this](#reacting-immediately-to-configuration-dependencies)
+section.
+
 #### Inline values
 
 `.spec.values` is an optional field to inline values within a HelmRelease. When
@@ -491,10 +551,45 @@ The field offers the following subfields:
   from running during the installation of the chart. Defaults to `false`.
 - `.disableOpenAPIValidation` (Optional): Prevents Helm from validating the
   rendered templates against the Kubernetes OpenAPI Schema. Defaults to `false`.
+- `.disableSchemaValidation` (Optional): Prevents Helm from validating the
+  values against the JSON Schema. Defaults to `false`.
+- `.disableTakeOwnership` (Optional): Disables taking ownership of existing resources
+  during the Helm install action. Defaults to `false`.
 - `.disableWait` (Optional): Disables waiting for resources to be ready after
   the installation of the chart. Defaults to `false`.
 - `.disableWaitForJobs` (Optional): Disables waiting for any Jobs to complete
   after the installation of the chart. Defaults to `false`.
+- `.serverSideApply` (Optional): Enables Server-Side Apply for resources during
+  the installation. When `true`, the controller uses Kubernetes Server-Side
+  Apply which provides better conflict detection and field ownership tracking.
+  Defaults to `true` (or `false` when the `UseHelm3Defaults` feature gate is
+  enabled).
+
+#### Install strategy
+
+`.spec.install.strategy` is an optional field to specify the strategy
+to use when running a Helm install action.
+
+The field offers the following subfields:
+
+- `.name` (Required): The name of the install strategy to use. One of
+  `RemediateOnFailure` or `RetryOnFailure`.
+  If the `.spec.install.strategy` field is not specified, the HelmRelease
+  reconciliation behaves as if `.spec.install.strategy.name` was set to
+  `RemediateOnFailure`, or `RetryOnFailure` when the
+  `DefaultToRetryOnFailure` feature gate is enabled.
+- `.retryInterval` (Optional): The time to wait between retries of failed
+  releases when the install strategy is set to `RetryOnFailure`. Defaults
+  to `5m`. Cannot be used with `RemediateOnFailure`.
+
+The default `RemediateOnFailure` strategy applies the rules defined by the
+`.spec.install.remediation` field to the install action, i.e. the same
+behavior of the controller prior to the introduction of the `RetryOnFailure`
+strategy.
+
+The `RetryOnFailure` strategy will retry a failed install with an upgrade
+after the interval defined by the `.spec.install.strategy.retryInterval`
+field.
 
 #### Install remediation
 
@@ -533,15 +628,51 @@ The field offers the following subfields:
   from running during the upgrade of the release. Defaults to `false`.
 - `.disableOpenAPIValidation` (Optional): Prevents Helm from validating the
   rendered templates against the Kubernetes OpenAPI Schema. Defaults to `false`.
+- `.disableSchemaValidation` (Optional): Prevents Helm from validating the
+  values against the JSON Schema. Defaults to `false`.
+- `.disableTakeOwnership` (Optional): Disables taking ownership of existing resources
+  during the Helm upgrade action. Defaults to `false`.
 - `.disableWait` (Optional): Disables waiting for resources to be ready after
   upgrading the release. Defaults to `false`.
 - `.disableWaitForJobs` (Optional): Disables waiting for any Jobs to complete
   after upgrading the release. Defaults to `false`.
-- `.force` (Optional): Forces resource updates through a replacement strategy.
+- `.force` (Optional): Forces resource updates through a replacement strategy
+  that avoids 3-way merge conflicts on client-side apply.
+  This field is ignored for server-side apply (which always forces conflicts
+  with other field managers).
   Defaults to `false`.
 - `.preserveValues` (Optional): Instructs Helm to re-use the values from the
   last release while merging in overrides from [values](#values). Setting
   this flag makes the HelmRelease non-declarative. Defaults to `false`.
+- `.serverSideApply` (Optional): Controls Server-Side Apply for resources during
+  the upgrade. Can be `enabled`, `disabled`, or `auto`. When `auto`, the apply
+  method will be based on the release's previous usage. Defaults to `auto`.
+
+#### Upgrade strategy
+
+`.spec.upgrade.strategy` is an optional field to specify the strategy
+to use when running a Helm upgrade action.
+
+The field offers the following subfields:
+
+- `.name` (Required): The name of the upgrade strategy to use. One of
+  `RemediateOnFailure` or `RetryOnFailure`. If the `.spec.upgrade.strategy`
+  field is not specified, the HelmRelease reconciliation behaves as if
+  `.spec.upgrade.strategy.name` was set to `RemediateOnFailure`, or
+  `RetryOnFailure` when the `DefaultToRetryOnFailure` feature gate is
+  enabled.
+- `.retryInterval` (Optional): The time to wait between retries of failed
+  releases when the upgrade strategy is set to `RetryOnFailure`. Defaults
+  to `5m`. Cannot be used with `RemediateOnFailure`.
+
+The default `RemediateOnFailure` strategy applies the rules defined by the
+`.spec.upgrade.remediation` field to the upgrade action, i.e. the same
+behavior of the controller prior to the introduction of the `RetryOnFailure`
+strategy.
+
+The `RetryOnFailure` strategy will retry failed upgrades in a regular
+interval defined by the `.spec.upgrade.strategy.retryInterval` field,
+without applying any remediation.
 
 #### Upgrade remediation
 
@@ -556,6 +687,8 @@ The field offers the following subfields:
   infinite number of retries.
 - `.strategy` (Optional): The remediation strategy to use when a Helm upgrade
   fails. Valid values are `rollback` and `uninstall`. Defaults to `rollback`.
+  After an `uninstall` remediation, the controller will attempt to reinstall
+  the release.
 - `.ignoreTestFailures` (Optional): Instructs the controller to not remediate
   when a [Helm test](#test-configuration) failure occurs. Defaults to
   `.spec.test.ignoreFailures`.
@@ -625,10 +758,20 @@ The field offers the following subfields:
   rolling back the release. Defaults to `false`.
 - `.disableWaitForJobs` (Optional): Disables waiting for any Jobs to complete
   after rolling back the release. Defaults to `false`.
-- `.force` (Optional): Forces resource updates through a replacement strategy.
+- `.force` (Optional): Forces resource updates through a replacement strategy
+  that avoids 3-way merge conflicts on client-side apply.
+  This field is ignored for server-side apply (which always forces conflicts
+  with other field managers).
   Defaults to `false`.
 - `.recreate` (Optional): Performs Pod restarts if applicable. Defaults to
-  `false`.
+  `false`. **Warning**: As of Flux v2.8, this option is deprecated and no
+  longer has any effect. It will be removed in a future release. The
+  helm-controller will print a warning if this option is used. Please
+  see the [Helm 4 issue](https://github.com/fluxcd/helm-controller/issues/1300#issuecomment-3740272924)
+  for more details.
+- `.serverSideApply` (Optional): Controls Server-Side Apply for resources during
+  the rollback. Can be `enabled`, `disabled`, or `auto`. When `auto`, the apply
+  method will be based on the release's previous usage. Defaults to `auto`.
 
 ### Uninstall configuration
 
@@ -765,6 +908,18 @@ spec:
 **Note:** In many cases, it may be better (and easier) to configure an [ignore
 rule](#ignore-rules) to ignore (a portion of) a resource.
 
+### Common metadata
+
+`.spec.commonMetadata` is an optional field used to specify any metadata that
+should be applied to all the Helm Chart's resources via kustomize post renderer. It has two optional fields:
+
+- `labels`: A map used for setting [labels](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/)
+  on an object. Any existing label will be overridden if it matches with a key in
+  this map.
+- `annotations`: A map used for setting [annotations](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/)
+  on an object. Any existing annotation will be overridden if it matches with a key
+  in this map.
+
 ### Post renderers
 
 `.spec.postRenderers` is an optional list to provide [post rendering](https://helm.sh/docs/topics/advanced/#post-rendering)
@@ -798,7 +953,131 @@ spec:
             newTag: 0.4.1-debian-10-r54
 ```
 
-### KubeConfig reference
+### Wait strategy
+
+`.spec.waitStrategy` is an optional field to configure how the controller waits
+for resources to become ready after Helm actions.
+
+The field offers the following subfields:
+
+- `.name` (Required): The strategy for waiting for resources to be ready.
+  One of `poller` or `legacy`. The `poller` strategy uses kstatus to poll resource
+  statuses, while the `legacy` strategy uses Helm v3's waiting logic. Defaults to
+  `poller`, or to `legacy` when the `UseHelm3Defaults` feature gate is enabled.
+
+```yaml
+spec:
+  waitStrategy:
+    name: poller
+```
+
+### Health check expressions
+
+`.spec.healthCheckExprs` can be used to define custom logic for performing health
+checks on custom resources using [Common Expression Language (CEL)](https://cel.dev/).
+
+The expressions are evaluated only when the Helm action taking place has wait
+enabled (i.e. `.spec.<action>.disableWait` is `false`) and the `poller`
+wait strategy is used (i.e. `.spec.waitStrategy.name` is `poller`).
+
+The `.spec.healthCheckExprs` field accepts a list of objects with the following fields:
+
+- `apiVersion`: The API version of the custom resource. Required.
+- `kind`: The kind of the custom resource. Required.
+- `current`: A required CEL expression that returns `true` if the resource is ready.
+- `inProgress`: An optional CEL expression that returns `true` if the resource
+  is still being reconciled.
+- `failed`: An optional CEL expression that returns `true` if the resource
+  failed to reconcile.
+
+The controller will evaluate the expressions in the following order:
+
+1. `inProgress` if specified
+2. `failed` if specified
+3. `current`
+
+The first expression that evaluates to `true` will determine the health
+status of the custom resource.
+
+For example, to define a set of health check expressions for the `SealedSecret`
+custom resource:
+
+```yaml
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: sealed-secrets
+spec:
+  interval: 10m
+  chartRef:
+    kind: OCIRepository
+    name: sealed-secrets-chart
+  values:
+    replicaCount: 2
+  healthCheckExprs:
+    - apiVersion: bitnami.com/v1alpha1
+      kind: SealedSecret
+      failed: status.conditions.filter(e, e.type == 'Synced').all(e, e.status == 'False')
+      current: status.conditions.filter(e, e.type == 'Synced').all(e, e.status == 'True')
+```
+
+A common error is writing expressions that reference fields that do not
+exist in the custom resource. This will cause the controller to wait
+for the resource to be ready until the timeout is reached. To avoid this,
+make sure your CEL expressions are correct. The
+[CEL Playground](https://playcel.undistro.io/) is a useful resource for
+this task. The input passed to each expression is the custom resource
+object itself. You can check for field existence with the
+[`has(...)` CEL macro](https://github.com/google/cel-spec/blob/master/doc/langdef.md#macros),
+just be aware that `has(status)` errors if `status` does not (yet) exist
+on the top level of the resource you are using.
+
+It's worth checking if [the library](/flux/cheatsheets/cel-healthchecks/)
+has expressions for the custom resources you are using.
+
+### KubeConfig (Remote clusters)
+
+With the `.spec.kubeConfig` field a HelmRelease
+can apply and manage resources on a remote cluster.
+
+Two authentication alternatives are available:
+
+- `.spec.kubeConfig.secretRef`: Secret-based authentication using a
+  static kubeconfig stored in a Kubernetes Secret in the same namespace
+  as the HelmRelease.
+- `.spec.kubeConfig.configMapRef` (Recommended): Secret-less authentication
+  building a kubeconfig dynamically with parameters stored in a Kubernetes
+  ConfigMap in the same namespace as the HelmRelease via workload identity.
+
+To make a HelmRelease react immediately to changes in the referenced Secret
+or ConfigMap see [this](#reacting-immediately-to-configuration-dependencies)
+section.
+
+When both `.spec.kubeConfig` and
+[`.spec.serviceAccountName`](#service-account-reference) are specified,
+the controller will impersonate the ServiceAccount on the target cluster,
+i.e. a ServiceAccount with name `.spec.serviceAccountName` must exist in
+the target cluster inside a namespace with the same name as the namespace
+of the HelmRelease. For example, if the HelmRelease is in the namespace
+`apps` of the cluster where Flux is running, then the ServiceAccount
+must be in the `apps` namespace of the target remote cluster, and have the
+name `.spec.serviceAccountName`. In other words, the namespace of the
+HelmRelease must exist both in the cluster where Flux is running
+and in the target remote cluster where Flux will apply resources.
+
+The Helm storage is stored on the remote cluster in a namespace that equals to
+the namespace of the HelmRelease, or the [configured storage namespace](#storage-namespace).
+The release itself is made in a namespace that equals to the namespace of the
+HelmRelease, or the [configured target namespace](#target-namespace). The
+namespaces are expected to exist, with the exception that the target namespace
+can be created on demand by Helm when namespace creation is [configured during
+install](#install-configuration).
+
+Other references to Kubernetes resources in the HelmRelease, like
+[values references](#values-references), are expected to exist on
+the cluster where Flux is running.
+
+#### Secret-based authentication
 
 `.spec.kubeConfig.secretRef.name` is an optional field to specify the name of
 a Secret containing a KubeConfig. If specified, the Helm operations will be
@@ -822,30 +1101,94 @@ stringData:
   value.yaml: |
     apiVersion: v1
     kind: Config
-    # ...omitted for brevity   
+    # ...omitted for brevity
 ```
 
 **Note:** The KubeConfig should be self-contained and not rely on binaries, the
 environment, or credential files from the helm-controller Pod. This matches the
 constraints of KubeConfigs from current Cluster API providers. KubeConfigs with
 `cmd-path` in them likely won't work without a custom, per-provider installation
-of helm-controller.
+of helm-controller. For more information, see
+[remote clusters/Cluster-API](#remote-cluster-api-clusters).
 
-When both `.spec.kubeConfig` and a [Service Account reference](#service-account-reference)
-are specified, the controller will impersonate the Service Account on the
-target cluster.
+#### Secret-less authentication
 
-The Helm storage is stored on the remote cluster in a namespace that equals to
-the namespace of the HelmRelease, or the [configured storage namespace](#storage-namespace).
-The release itself is made in a namespace that equals to the namespace of the
-HelmRelease, or the [configured target namespace](#target-namespace). The
-namespaces are expected to exist, with the exception that the target namespace
-can be created on demand by Helm when namespace creation is [configured during
-install](#install-configuration).
+The field `.spec.kubeConfig.configMapRef.name` can be used to specify the
+name of a ConfigMap in the same namespace as the HelmRelease containing
+parameters for secret-less authentication via workload identity. The
+supported keys inside the `.data` field of the ConfigMap are:
 
-Other references to Kubernetes resources in the HelmRelease, like [values
-references](#values-references), are expected to exist on the reconciling
-cluster.
+- `.data.provider`: The provider to use. One of `aws`, `azure`, `gcp`,
+  or `generic`. Required. The `aws` provider is used for connecting to
+  remote EKS clusters, `azure` for AKS, `gcp` for GKE, and `generic`
+  for Kubernetes OIDC authentication between clusters. For the
+  `generic` provider, the remote cluster must be configured to trust
+  the OIDC issuer of the cluster where Flux is running.
+- `.data.cluster`: The fully qualified resource name of the Kubernetes
+  cluster in the cloud provider API. Not used by the `generic`
+  provider. Required when one of `.data.address` or `.data["ca.crt"]` is
+  not set, or if the provider is `aws` (required for defining a region).
+- `.data.address`: The address of the Kubernetes API server. Required
+  for `generic`. For the other providers, if not specified, the
+  first address in the cluster resource will be used, and if
+  specified, it must match one of the addresses in the cluster
+  resource.
+  If `audiences` is not set, will be used as the audience for the
+  `generic` provider.
+- `.data["ca.crt"]`: The optional PEM-encoded CA certificate for the
+  Kubernetes API server. If not set, the controller will use the
+  CA certificate from the cluster resource.
+- `.data.audiences`: The optional audiences as a list of
+  line-break-separated strings for the Kubernetes ServiceAccount token.
+  Defaults to the address for the `generic` provider, or to specific
+  values for the other providers depending on the provider.
+- `.data.serviceAccountName`: The optional name of the Kubernetes
+  ServiceAccount in the same namespace that should be used
+  for authentication. If not specified, the controller
+  ServiceAccount will be used. Not confuse with the ServiceAccount
+  used for impersonation, which is specified with
+  [`.spec.serviceAccountName`](#service-account-reference) directly
+  in the HelmRelease spec and must exist in the target remote cluster.
+
+The `.data.cluster` field, when specified, must have the following formats:
+
+- `aws`: `arn:<partition>:eks:<region>:<account-id>:cluster/<cluster-name>`
+- `azure`: `/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.ContainerService/managedClusters/<cluster-name>`
+- `gcp`: `projects/<project-id>/locations/<location>/clusters/<cluster-name>`
+
+For complete guides on workload identity and setting up permissions for
+this feature, see the following docs:
+
+- [EKS](/flux/integrations/aws/#for-amazon-elastic-kubernetes-service)
+- [AKS](/flux/integrations/azure/#for-azure-kubernetes-service)
+- [GKE](/flux/integrations/gcp/#for-google-kubernetes-engine)
+- [Generic](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#configuring-the-api-server)
+
+Example for an EKS cluster:
+
+```yaml
+apiVersion: helm.toolkit.fluxcd.io/v1
+kind: HelmRelease
+metadata:
+  name: backend
+  namespace: apps
+spec:
+  ... # other fields omitted for brevity
+  kubeConfig:
+    configMapRef:
+      name: kubeconfig
+  serviceAccountName: apps-sa # optional. must exist in the target cluster. user for impersonation
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubeconfig
+  namespace: apps
+data:
+  provider: aws
+  cluster: arn:aws:eks:eu-central-1:123456789012:cluster/my-cluster
+  serviceAccountName: apps-iam-role # optional. maps to an AWS IAM Role. used for authentication
+```
 
 ### Interval
 
@@ -855,12 +1198,13 @@ matches the desired state.
 
 After successfully reconciling the object, the controller requeues it for
 inspection at the specified interval. The value must be in a [Go recognized
-duration string format](https://pkg.go.dev/time#ParseDuration), e.g. `10m0s`
-to reconcile the object every ten minutes.
+duration string format](https://pkg.go.dev/time#ParseDuration), e.g. `15m0s`
+to reconcile the object every fifteen minutes.
 
 If the `.metadata.generation` of a resource changes (due to e.g. a change to
 the spec) or the HelmChart revision changes (which generates a Kubernetes
-Event), this is handled instantly outside the interval window.
+Event), or a ConfigMap/Secret referenced in `valuesFrom` changes,
+this is handled instantly outside the interval window.
 
 **Note:** The controller can be configured to apply a jitter to the interval in
 order to distribute the load more evenly when multiple HelmRelease objects are
@@ -884,6 +1228,69 @@ a new Helm release. When the field is set to `false` or removed, it will
 resume.
 
 ## Working with HelmReleases
+
+### Recommended settings
+
+When deploying applications to production environments, it is recommended
+to use OCI-based Helm charts with OCIRepository as `chartRef`, and
+to configure the following fields, while adjusting them to your desires for
+responsiveness:
+
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: webapp-chart
+  namespace: apps
+spec:
+  interval: 5m # check for new versions every 5 minutes and trigger an upgrade
+  url: oci://ghcr.io/org/charts/webapp
+  secretRef:
+    name: registry-auth # Image pull secret with read-only access
+  layerSelector: # select the Helm chart layer
+    mediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+    operation: copy
+  ref:
+    semver: "*" # track the latest stable version
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: webapp
+  namespace: apps
+spec:
+  releaseName: webapp
+  chartRef:
+    kind: OCIRepository
+    name: webapp-chart
+  interval: 30m # run drift detection every 30 minutes
+  driftDetection:
+    mode: enabled # undo kubectl edits and other unintended changes
+  install:
+    strategy:
+      name: RetryOnFailure # retry failed installations instead of uninstalling
+      retryInterval: 5m # retry failed installations every five minutes
+  upgrade:
+    crds: CreateReplace # update CRDs when upgrading
+    strategy:
+      name: RetryOnFailure # retry failed upgrades instead of rollback
+      retryInterval: 5m # retry failed upgrades every five minutes
+  # All ConfigMaps and Secrets referenced in valuesFrom should
+  # be labelled with `reconcile.fluxcd.io/watch: Enabled`
+  valuesFrom:
+    - kind: ConfigMap
+      name: webapp-values
+    - kind: Secret
+      name: webapp-secret-values
+```
+
+Note that the `RetryOnFailure` strategy is suitable for statefulsets
+and other workloads that cannot tolerate rollbacks and have a high rollout duration
+susceptible to health check timeouts and transient capacity errors.
+
+For stateless workloads and applications that can tolerate rollbacks, the
+`RemediateOnFailure` strategy may be more suitable, as it will ensure that
+the last known good state is restored in case of a failure.
 
 ### Configuring failure handling
 
@@ -955,7 +1362,7 @@ metadata:
   name: my-operator
   namespace: default
 spec:
-  interval: 10m
+  interval: 15m
   chart:
     spec:
       chart: my-operator
@@ -1043,7 +1450,7 @@ metadata:
  namespace: webapp
 spec:
  serviceAccountName: webapp-reconciler
- interval: 5m
+ interval: 15m
  chart:
    spec:
      chart: podinfo
@@ -1070,9 +1477,9 @@ specified will use the Service Account name provided by
 For further best practices on securing helm-controller, see our
 [best practices guide](https://fluxcd.io/flux/security/best-practices).
 
-### Remote clusters / Cluster-API
+### Remote Cluster API clusters
 
-Using a [`.spec.kubeConfig` reference](#kubeconfig-reference), it is possible
+Using a [`.spec.kubeConfig` reference](#kubeconfig-remote-clusters), it is possible
 to manage the full lifecycle of Helm releases on remote clusters.
 This composes well with Cluster-API bootstrap providers such as CAPBK (kubeadm),
 CAPA (AWS), and others.
@@ -1222,6 +1629,60 @@ Using `flux`:
 ```sh
 flux reconcile helmrelease <helmrelease-name> --reset
 ```
+
+### Handling failed uninstall
+
+At times, a Helm uninstall may fail due to the resource deletion taking a long
+time, resources getting stuck in deleting phase due to some resource delete
+policy in the cluster or some failing delete hooks. Depending on the scenario,
+this can be handled in a few different ways.
+
+For resources that take long to delete but are certain to get deleted without
+any intervention, failed uninstall will be retried until they succeeds. The
+HelmRelease object will remain in a failed state until the uninstall succeeds.
+Once uninstall is successful, the HelmRelease object will get deleted.
+
+If resources get stuck at deletion due to some dependency on some other
+resource or policy, the controller will keep retrying to delete the resources.
+The HelmRelease object will remain in a failed state. Once the cause of resource
+deletion issue is resolved by intervention, HelmRelease uninstallation will
+succeed and the HelmRelease object will get deleted. In case the cause of the
+deletion issue can't be resolved, the HelmRelease can be force deleted by
+manually deleting the [Helm storage
+secret](https://helm.sh/docs/topics/advanced/#storage-backends) from the
+respective release namespace. When the controller retries uninstall and cannot
+find the release, it assumes that the release has been deleted, Helm uninstall
+succeeds and the HelmRelease object gets deleted. This leaves behind all the
+release resources. They have to be manually deleted.
+
+If a chart with pre-delete hooks fail, the controller will re-run the hooks
+until they succeed and unblock the uninstallation. The Helm uninstall error
+will be present in the status of HelmRelease. This can be used to identify which
+hook is failing. If the hook failure persists, to run uninstall without the
+hooks, equivalent of running `helm uninstall --no-hooks`, update the HelmRelease
+to set `.spec.uninstall.disableHooks` to `true`.
+
+```yaml
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+...
+spec:
+  ...
+  uninstall:
+    disableHooks: true
+```
+
+In the next reconciliation, the controller will run Helm uninstall without the
+hooks. On success, the HelmRelease will get deleted. Otherwise, check the status
+of the HelmRelease for other failure that may be blocking the uninstall.
+
+In case of charts with post-delete hooks, since the hook runs after the deletion
+of the resources and the Helm storage, the hook failure will result in an
+initial uninstall failure. In the subsequent reconciliation to retry uninstall,
+since the Helm storage for the release got deleted, uninstall will succeed and
+the HelmRelease object will get deleted.
+
+Any leftover pre or post-delete hook resources have to be manually deleted.
 
 ### Waiting for `Ready`
 
@@ -1392,6 +1853,45 @@ Besides being reported in Events, the controller may also log reconciliation
 errors. The Flux CLI offers commands for filtering the logs for a specific
 HelmRelease, e.g. `flux logs --level=error --kind=HelmRelease --name=<release-name>.`
 
+#### Rendering the final Values locally
+
+When using multiple [values references](#values-references) in a
+HelmRelease, it can be useful to inspect the final values computed from the various sources.
+This can be done by pointing the Flux CLI to the in-cluster HelmRelease object:
+
+```shell
+flux debug hr <release-name> -n <namespace> --show-values
+```
+
+The command will output the final values by merging the in-line values from the HelmRelease
+with the values from the referenced ConfigMaps and/or Secrets.
+
+**Note:** The debug command will print sensitive information if Kubernetes Secrets
+are referenced in the HelmRelease `.spec.valuesFrom` field, so exercise caution
+when using this command.
+
+### Reacting immediately to configuration dependencies
+
+To trigger a Helm release upgrade when changes occur in referenced
+Secrets or ConfigMaps, you can set the following label on the
+Secret or ConfigMap:
+
+```yaml
+metadata:
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
+```
+
+An alternative to labeling every Secret or ConfigMap is
+setting the `--watch-configs-label-selector=owner!=helm`
+[flag](https://fluxcd.io/flux/components/helm/options/#flags)
+in helm-controller, which allows watching all Secrets and
+ConfigMaps except for Helm storage Secrets.
+
+**Note**: An upgrade will be triggered for an event on a referenced
+Secret/ConfigMap even if it's marked as optional in the `.spec.valuesFrom`
+field, including deletion events.
+
 ## HelmRelease Status
 
 ### Events
@@ -1463,6 +1963,7 @@ status:
       namespace: podinfo
       ociDigest: sha256:0cc9a8446c95009ef382f5eade883a67c257f77d50f84e78ecef2aac9428d1e5
       status: deployed
+      action: upgrade
       testHooks:
         podinfo-grpc-test-goyey:
           lastCompleted: "2024-05-07T04:55:11Z"
@@ -1480,12 +1981,43 @@ status:
       namespace: podinfo
       ociDigest: sha256:cdd538a0167e4b51152b71a477e51eb6737553510ce8797dbcc537e1342311bb
       status: superseded
+      action: install
       testHooks:
         podinfo-grpc-test-q0ucx:
           lastCompleted: "2024-05-07T04:54:25Z"
           lastStarted: "2024-05-07T04:54:23Z"
           phase: Succeeded
       version: 1
+```
+
+### Inventory
+
+The HelmRelease reports the list of Kubernetes resource objects that have been
+applied by the Helm release in `.status.inventory`. This can be used to
+identify which objects are managed by the HelmRelease. The inventory records
+are in the format `<namespace>_<name>_<group>_<kind>`.
+
+The inventory includes all resources from the rendered manifests, as well as
+CRDs from the chart's `crds/` directory. Helm hooks are not included in the
+inventory, as they are not considered part of the release by Helm.
+
+#### Inventory example
+
+```yaml
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: <release-name>
+status:
+  inventory:
+    entries:
+      - id: default_podinfo__Service
+        v: v1
+      - id: default_podinfo_apps_Deployment
+        v: v1
+      - id: default_podinfo_autoscaling_HorizontalPodAutoscaler
+        v: v2
 ```
 
 ### Conditions
@@ -1710,6 +2242,11 @@ are `install` and `upgrade`.
 
 This field is used by the controller to determine the active remediation
 strategy for the HelmRelease.
+
+### Last Attempted Release Action Duration
+
+The helm-controller reports the duration of the last Helm release action it
+attempted to perform in the `.status.lastAttemptedReleaseActionDuration` field.
 
 ### Last Handled Reconcile At
 
