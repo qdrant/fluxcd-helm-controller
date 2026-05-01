@@ -112,6 +112,8 @@ type HelmReleaseReconciler struct {
 	DefaultToRetryOnFailure    bool
 	DirectSourceFetch          bool
 	DisableChartDigestTracking bool
+
+	LeaderElection *bool
 }
 
 const terminalErrorMessage = "Reconciliation failed terminally due to configuration error"

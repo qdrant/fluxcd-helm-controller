@@ -15,6 +15,7 @@ rules:
   - cd.qdrant.io
   resources:
   - helmcharts
+  - ocirepositories
   verbs:
   - get
   - list
@@ -23,6 +24,7 @@ rules:
   - cd.qdrant.io
   resources:
   - helmcharts/status
+  - ocirepositories/status
   verbs:
   - get
 - apiGroups:
@@ -55,19 +57,3 @@ rules:
   - get
   - patch
   - update
-- apiGroups:
-  - source.toolkit.fluxcd.io
-  resources:
-  - helmcharts
-  - ocirepositories
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - cd.qdrant.io
-  resources:
-  - helmcharts/status
-  - ocirepositories/status
-  verbs:
-  - get

@@ -176,5 +176,8 @@ func (r *HelmReleaseReconciler) SetupWithManager(ctx context.Context, mgr ctrl.M
 		)
 	}
 
-	return blder.WithOptions(controller.Options{RateLimiter: opts.RateLimiter}).Complete(toComplete)
+	return blder.WithOptions(controller.Options{
+		RateLimiter:        opts.RateLimiter,
+		NeedLeaderElection: r.LeaderElection,
+	}).Complete(toComplete)
 }
