@@ -150,17 +150,17 @@ $(HELMCHART_SOURCE_CRD):
 	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_helmcharts.yaml > $(HELMCHART_SOURCE_CRD)
 
 $(OCIREPO_CRD):
-	curl -s https://raw.githubusercontent.com/fluxcd/source-controller/${SOURCE_VER}/config/crd/bases/source.toolkit.fluxcd.io_ocirepositories.yaml -o $(OCIREPO_CRD)
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_ocirepositories.yaml > $(OCIREPO_CRD)
 
 $(EA_CRD):
-	curl -s https://raw.githubusercontent.com/fluxcd/source-controller/${SOURCE_VER}/config/crd/bases/source.toolkit.fluxcd.io_externalartifacts.yaml -o $(EA_CRD)
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_externalartifacts.yaml > $(EA_CRD)
 
 # Download the CRDs the controller depends on
 download-crd-deps: $(SOURCE_CRD_VER) $(HELMCHART_SOURCE_CRD) $(OCIREPO_CRD) $(EA_CRD)
 
 # Delete the downloaded CRD dependencies.
 cleanup-crd-deps:
-	rm -f $(HELMCHART_SOURCE_CRD)
+	rm -f $(HELMCHART_SOURCE_CRD) $(OCIREPO_CRD) $(EA_CRD)
 
 # Find or download controller-gen
 CONTROLLER_GEN = $(GOBIN)/controller-gen
