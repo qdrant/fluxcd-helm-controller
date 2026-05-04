@@ -96,7 +96,7 @@ other: values
 			Client:        c,
 			EventRecorder: &DummyRecorder{},
 		}
-		_, _ = r.reconcileRelease(logr.NewContext(context.TODO(), logr.Discard()), patch.NewSerialPatcher(&hr, c), &hr)
+		_, _ = r.reconcileRelease(logr.NewContext(context.TODO(), logr.Discard()), patch.NewSerialPatcher(&hr, c), &hr, nil)
 	})
 }
 
