@@ -39,6 +39,7 @@ func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmRel
 
 	hr := &controller.HelmReleaseReconciler{
 		Client:                    mgr.GetClient(),
+		APIReader:                 mgr.GetAPIReader(),
 		EventRecorder:             eventRecorder,
 		Metrics:                   adapter.MetricOptions,
 		GetClusterConfig:          ctrl.GetConfig,
