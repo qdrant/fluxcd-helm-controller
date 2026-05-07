@@ -39,6 +39,7 @@ import (
 )
 
 type HelmReleaseReconcilerOptions struct {
+	MaxConcurrentReconciles    int
 	RateLimiter                workqueue.TypedRateLimiter[reconcile.Request]
 	WatchConfigs               bool
 	WatchConfigsPredicate      predicate.Predicate
@@ -177,7 +178,8 @@ func (r *HelmReleaseReconciler) SetupWithManager(ctx context.Context, mgr ctrl.M
 	}
 
 	return blder.WithOptions(controller.Options{
-		RateLimiter:        opts.RateLimiter,
-		NeedLeaderElection: r.LeaderElection,
+		MaxConcurrentReconciles: opts.MaxConcurrentReconciles,
+		RateLimiter:             opts.RateLimiter,
+		NeedLeaderElection:      r.LeaderElection,
 	}).Complete(toComplete)
 }
