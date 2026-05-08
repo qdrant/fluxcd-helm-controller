@@ -37,10 +37,11 @@ import (
 )
 
 type HelmReleaseReconcilerOptions struct {
-	RateLimiter            workqueue.TypedRateLimiter[reconcile.Request]
-	WatchConfigs           bool
-	WatchConfigsPredicate  predicate.Predicate
-	WatchExternalArtifacts bool
+	MaxConcurrentReconciles int
+	RateLimiter             workqueue.TypedRateLimiter[reconcile.Request]
+	WatchConfigs            bool
+	WatchConfigsPredicate   predicate.Predicate
+	WatchExternalArtifacts  bool
 }
 
 func (r *HelmReleaseReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opts HelmReleaseReconcilerOptions) error {
@@ -152,6 +153,9 @@ func (r *HelmReleaseReconciler) SetupWithManager(ctx context.Context, mgr ctrl.M
 		)
 	}
 
-	return ctrlBuilder.WithOptions(controller.Options{RateLimiter: opts.RateLimiter}).Complete(r)
+	return ctrlBuilder.WithOptions(controller.Options{
+		MaxConcurrentReconciles: opts.MaxConcurrentReconciles,
+		RateLimiter:             opts.RateLimiter,
+	}).Complete(r)
 
 }

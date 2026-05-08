@@ -24,6 +24,7 @@ type HelmReleaseAdapter struct {
 }
 
 type HelmReleaseReconcilerOption struct {
+	MaxConcurrentReconciles   int
 	ArtifactFetchRetries      int
 	DependencyRequeueInterval time.Duration
 	RateLimiter               workqueue.TypedRateLimiter[reconcile.Request]
@@ -50,6 +51,7 @@ func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmRel
 		ArtifactFetchRetries:      adapter.ReconcilerOptions.ArtifactFetchRetries,
 	}
 	return hr.SetupWithManager(ctx, mgr, controller.HelmReleaseReconcilerOptions{
-		RateLimiter: adapter.ReconcilerOptions.RateLimiter,
+		MaxConcurrentReconciles: adapter.ReconcilerOptions.MaxConcurrentReconciles,
+		RateLimiter:             adapter.ReconcilerOptions.RateLimiter,
 	})
 }
