@@ -237,7 +237,7 @@ HelmRelease object.
 #### OCIRepository reference example
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1
+apiVersion: cd.qdrant.io/v1
 kind: OCIRepository
 metadata:
   name: podinfo
@@ -415,7 +415,7 @@ verify that a dependency has a matching version in values before proceeding with
 reconciliation of the dependent HelmRelease.
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: backend
@@ -426,7 +426,7 @@ spec:
     app:
       version: v1.2.3
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: frontend
@@ -1059,7 +1059,7 @@ this feature, see the following docs:
 Example for an EKS cluster:
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v1
+apiVersion: cd.qdrant.io/v1
 kind: HelmRelease
 metadata:
   name: backend
@@ -1129,7 +1129,7 @@ to configure the following fields, while adjusting them to your desires for
 responsiveness:
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1
+apiVersion: cd.qdrant.io/v1
 kind: OCIRepository
 metadata:
   name: webapp-chart
@@ -1145,7 +1145,7 @@ spec:
   ref:
     semver: "*" # track the latest stable version
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: webapp
@@ -1555,7 +1555,7 @@ hooks, equivalent of running `helm uninstall --no-hooks`, update the HelmRelease
 to set `.spec.uninstall.disableHooks` to `true`.
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 ...
 spec:

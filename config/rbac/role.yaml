@@ -56,7 +56,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - source.toolkit.fluxcd.io
+  - cd.qdrant.io
   resources:
   - helmcharts
   - ocirepositories

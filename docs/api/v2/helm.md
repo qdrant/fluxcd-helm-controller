@@ -187,7 +187,7 @@ Defaults to the namespace of the HelmRelease.</p>
 <td>
 <code>dependsOn</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.DependencyReference">
+<a href="#cd.qdrant.io/v2.DependencyReference">
 []DependencyReference
 </a>
 </em>
@@ -378,7 +378,7 @@ Kubernetes pkg/apis/apiextensions/v1.JSON
 <td>
 <code>commonMetadata</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.CommonMetadata">
+<a href="#cd.qdrant.io/v2.CommonMetadata">
 CommonMetadata
 </a>
 </em>
@@ -424,10 +424,10 @@ HelmReleaseStatus
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.ActionStrategyName">ActionStrategyName
+<h3 id="cd.qdrant.io/v2.ActionStrategyName">ActionStrategyName
 (<code>string</code> alias)</h3>
 <p>ActionStrategyName is a valid name for an action strategy.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.CRDsPolicy">CRDsPolicy
+<h3 id="cd.qdrant.io/v2.CRDsPolicy">CRDsPolicy
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
@@ -436,11 +436,11 @@ HelmReleaseStatus
 </p>
 <p>CRDsPolicy defines the install/upgrade approach to use for CRDs when
 installing or upgrading a HelmRelease.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.CommonMetadata">CommonMetadata
+<h3 id="cd.qdrant.io/v2.CommonMetadata">CommonMetadata
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>CommonMetadata defines the common labels and annotations.</p>
 <div class="md-typeset__scrollwrap">
@@ -481,7 +481,7 @@ map[string]string
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.CrossNamespaceObjectReference">CrossNamespaceObjectReference
+<h3 id="cd.qdrant.io/v2.CrossNamespaceObjectReference">CrossNamespaceObjectReference
 </h3>
 <p>
 (<em>Appears on:</em>
@@ -618,11 +618,11 @@ resource object that contains the reference.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.DependencyReference">DependencyReference
+<h3 id="cd.qdrant.io/v2.DependencyReference">DependencyReference
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>DependencyReference defines a HelmRelease dependency on another HelmRelease resource.</p>
 <div class="md-typeset__scrollwrap">
@@ -679,7 +679,7 @@ the feature gate <code>AdditiveCELDependencyCheck</code> must be set to <code>tr
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.DriftDetection">DriftDetection
+<h3 id="cd.qdrant.io/v2.DriftDetection">DriftDetection
 </h3>
 <p>
 (<em>Appears on:</em>
@@ -1322,7 +1322,7 @@ Defaults to the namespace of the HelmRelease.</p>
 <td>
 <code>dependsOn</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.DependencyReference">
+<a href="#cd.qdrant.io/v2.DependencyReference">
 []DependencyReference
 </a>
 </em>
@@ -1513,7 +1513,7 @@ Kubernetes pkg/apis/apiextensions/v1.JSON
 <td>
 <code>commonMetadata</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.CommonMetadata">
+<a href="#cd.qdrant.io/v2.CommonMetadata">
 CommonMetadata
 </a>
 </em>
@@ -1940,7 +1940,7 @@ Jobs for hooks) during the performance of a Helm install action. Defaults to
 <td>
 <code>strategy</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.InstallStrategy">
+<a href="#cd.qdrant.io/v2.InstallStrategy">
 InstallStrategy
 </a>
 </em>
@@ -2175,11 +2175,11 @@ no retries remain. Defaults to &lsquo;false&rsquo;.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.InstallStrategy">InstallStrategy
+<h3 id="cd.qdrant.io/v2.InstallStrategy">InstallStrategy
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.Install">Install</a>)
+<a href="#cd.qdrant.io/v2.Install">Install</a>)
 </p>
 <p>InstallStrategy holds the configuration for Helm install strategy.</p>
 <div class="md-typeset__scrollwrap">
@@ -2223,7 +2223,7 @@ Defaults to &lsquo;5m&rsquo;.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.Kustomize">Kustomize
+<h3 id="cd.qdrant.io/v2.Kustomize">Kustomize
 </h3>
 <p>
 (<em>Appears on:</em>
@@ -2329,11 +2329,11 @@ UpgradeRemediation.</p>
 </p>
 <p>RemediationStrategy returns the strategy to use to remediate a failed install
 or upgrade.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.Retry">Retry
+<h3 id="cd.qdrant.io/v2.Retry">Retry
 </h3>
 <p>Retry defines a consistent interface for retry strategies from
 InstallStrategy and UpgradeStrategy.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.Rollback">Rollback
+<h3 id="cd.qdrant.io/v2.Rollback">Rollback
 </h3>
 <p>
 (<em>Appears on:</em>
@@ -2656,11 +2656,11 @@ string
 <a href="#cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
 </p>
 <p>Snapshots is a list of Snapshot objects.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.Strategy">Strategy
+<h3 id="cd.qdrant.io/v2.Strategy">Strategy
 </h3>
 <p>Strategy defines a consistent interface for InstallStrategy and
 UpgradeStrategy.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.Test">Test
+<h3 id="cd.qdrant.io/v2.Test">Test
 </h3>
 <p>
 (<em>Appears on:</em>
@@ -2925,7 +2925,7 @@ Jobs for hooks) during the performance of a Helm upgrade action. Defaults to
 <td>
 <code>strategy</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.UpgradeStrategy">
+<a href="#cd.qdrant.io/v2.UpgradeStrategy">
 UpgradeStrategy
 </a>
 </em>
@@ -3171,11 +3171,11 @@ RemediationStrategy
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.UpgradeStrategy">UpgradeStrategy
+<h3 id="cd.qdrant.io/v2.UpgradeStrategy">UpgradeStrategy
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.Upgrade">Upgrade</a>)
+<a href="#cd.qdrant.io/v2.Upgrade">Upgrade</a>)
 </p>
 <p>UpgradeStrategy holds the configuration for Helm upgrade strategy.</p>
 <div class="md-typeset__scrollwrap">
