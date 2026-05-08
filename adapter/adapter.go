@@ -24,7 +24,7 @@ type HelmReleaseAdapter struct {
 }
 
 type HelmReleaseReconcilerOption struct {
-	HTTPRetry                 int
+	ArtifactFetchRetries      int
 	DependencyRequeueInterval time.Duration
 	RateLimiter               workqueue.TypedRateLimiter[reconcile.Request]
 }
@@ -38,18 +38,18 @@ func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmRel
 	}
 
 	hr := &controller.HelmReleaseReconciler{
-		Client:           mgr.GetClient(),
-		EventRecorder:    eventRecorder,
-		Metrics:          adapter.MetricOptions,
-		GetClusterConfig: ctrl.GetConfig,
-		ClientOpts:       adapter.ClientOpts,
-		KubeConfigOpts:   adapter.KubeConfigOpts,
-		LeaderElection:   adapter.LeaderElection,
-		FieldManager:     adapter.ControllerName,
+		Client:                    mgr.GetClient(),
+		APIReader:                 mgr.GetAPIReader(),
+		EventRecorder:             eventRecorder,
+		Metrics:                   adapter.MetricOptions,
+		GetClusterConfig:          ctrl.GetConfig,
+		ClientOpts:                adapter.ClientOpts,
+		KubeConfigOpts:            adapter.KubeConfigOpts,
+		FieldManager:              adapter.ControllerName,
+		DependencyRequeueInterval: adapter.ReconcilerOptions.DependencyRequeueInterval,
+		ArtifactFetchRetries:      adapter.ReconcilerOptions.ArtifactFetchRetries,
 	}
 	return hr.SetupWithManager(ctx, mgr, controller.HelmReleaseReconcilerOptions{
-		DependencyRequeueInterval: adapter.ReconcilerOptions.DependencyRequeueInterval,
-		HTTPRetry:                 adapter.ReconcilerOptions.HTTPRetry,
-		RateLimiter:               adapter.ReconcilerOptions.RateLimiter,
+		RateLimiter: adapter.ReconcilerOptions.RateLimiter,
 	})
 }

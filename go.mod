@@ -7,6 +7,9 @@ replace (
 	github.com/fluxcd/helm-controller/internal => ./internal
 )
 
+// Replace source-controller API with qdrant fork
+replace github.com/fluxcd/source-controller/api => github.com/qdrant/fluxcd-source-controller/api v0.0.0-20260508200322-db50dcab0b4e
+
 // Replace digest lib to master to gather access to BLAKE3.
 // xref: https://github.com/opencontainers/go-digest/pull/66
 replace github.com/opencontainers/go-digest => github.com/opencontainers/go-digest v1.0.1-0.20231025023718-d50d2fec9c98
