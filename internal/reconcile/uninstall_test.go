@@ -36,9 +36,10 @@ import (
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/conditions"
 
+	"github.com/fluxcd/pkg/chartutil"
+
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
-	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
 	"github.com/fluxcd/helm-controller/internal/release"
 	"github.com/fluxcd/helm-controller/internal/storage"
@@ -61,6 +62,10 @@ func TestUninstall_Reconcile(t *testing.T) {
 		status func(releases []*helmrelease.Release) v2.HelmReleaseStatus
 		// wantErr is the error that is expected to be returned.
 		wantErr error
+		// wantErrString is the error string that is expected to be in the
+		// returned error. This is used for scenarios that return
+		// untyped/unwrapped error that can't be asserted for their value.
+		wantErrString string
 		// expectedConditions are the conditions that are expected to be set on
 		// the HelmRelease after running rollback.
 		expectConditions []metav1.Condition
@@ -150,6 +155,7 @@ func TestUninstall_Reconcile(t *testing.T) {
 				}
 			},
 			expectFailures: 1,
+			wantErrString:  "timed out waiting",
 		},
 		{
 			name: "uninstall failure without storage update",
@@ -189,9 +195,9 @@ func TestUninstall_Reconcile(t *testing.T) {
 			},
 			expectConditions: []metav1.Condition{
 				*conditions.FalseCondition(meta.ReadyCondition, v2.UninstallFailedReason,
-					ErrNoStorageUpdate.Error()),
+					"%s", ErrNoStorageUpdate.Error()),
 				*conditions.FalseCondition(v2.ReleasedCondition, v2.UninstallFailedReason,
-					ErrNoStorageUpdate.Error()),
+					"%s", ErrNoStorageUpdate.Error()),
 			},
 			expectHistory: func(namespace string, releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
@@ -244,6 +250,7 @@ func TestUninstall_Reconcile(t *testing.T) {
 				}
 			},
 			expectFailures: 1,
+			wantErrString:  "Failed to purge the release",
 		},
 		{
 			name: "uninstall without current",
@@ -295,9 +302,9 @@ func TestUninstall_Reconcile(t *testing.T) {
 			},
 			expectConditions: []metav1.Condition{
 				*conditions.FalseCondition(meta.ReadyCondition, v2.UninstallFailedReason,
-					ErrReleaseMismatch.Error()),
+					"%s", ErrReleaseMismatch.Error()),
 				*conditions.FalseCondition(v2.ReleasedCondition, v2.UninstallFailedReason,
-					ErrReleaseMismatch.Error()),
+					"%s", ErrReleaseMismatch.Error()),
 			},
 			expectHistory: func(namespace string, releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
@@ -482,6 +489,8 @@ func TestUninstall_Reconcile(t *testing.T) {
 			})
 			if tt.wantErr != nil {
 				g.Expect(errors.Is(got, tt.wantErr)).To(BeTrue())
+			} else if tt.wantErrString != "" {
+				g.Expect(got.Error()).To(ContainSubstring(tt.wantErrString))
 			} else {
 				g.Expect(got).ToNot(HaveOccurred())
 			}
@@ -538,7 +547,7 @@ func TestUninstall_failure(t *testing.T) {
 			err.Error())
 
 		g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-			*conditions.FalseCondition(v2.ReleasedCondition, v2.UninstallFailedReason, expectMsg),
+			*conditions.FalseCondition(v2.ReleasedCondition, v2.UninstallFailedReason, "%s", expectMsg),
 		}))
 		g.Expect(req.Object.Status.Failures).To(Equal(int64(1)))
 		g.Expect(recorder.GetEvents()).To(ConsistOf([]corev1.Event{
@@ -607,7 +616,7 @@ func TestUninstall_success(t *testing.T) {
 		fmt.Sprintf("%s@%s", cur.Chart.Name(), cur.Chart.Metadata.Version))
 
 	g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-		*conditions.FalseCondition(v2.ReleasedCondition, v2.UninstallSucceededReason, expectMsg),
+		*conditions.FalseCondition(v2.ReleasedCondition, v2.UninstallSucceededReason, "%s", expectMsg),
 	}))
 	g.Expect(req.Object.Status.Failures).To(Equal(int64(0)))
 	g.Expect(recorder.GetEvents()).To(ConsistOf([]corev1.Event{

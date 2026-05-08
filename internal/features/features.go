@@ -18,7 +18,11 @@ limitations under the License.
 // helm-controller supports, and their default states.
 package features
 
-import feathelper "github.com/fluxcd/pkg/runtime/features"
+import (
+	"github.com/fluxcd/pkg/auth"
+	"github.com/fluxcd/pkg/runtime/controller"
+	feathelper "github.com/fluxcd/pkg/runtime/features"
+)
 
 const (
 	// CacheSecretsAndConfigMaps configures the caching of Secrets and ConfigMaps
@@ -58,6 +62,21 @@ const (
 	// without the need to upgrade the Helm release. But it can be disabled to
 	// avoid potential abuse of the adoption mechanism.
 	AdoptLegacyReleases = "AdoptLegacyReleases"
+
+	// DisableChartDigestTracking disables the tracking of digest changes
+	// for Helm OCI charts. When enabled, the controller will not trigger
+	// a Helm release upgrade if the chart version stays the same, but its
+	// digest changes. When enabled, the controller will not
+	// append the digest to the chart version in Chart.yaml.
+	DisableChartDigestTracking = "DisableChartDigestTracking"
+
+	// AdditiveCELDependencyCheck controls whether the CEL dependency check
+	// should be additive, meaning that the built-in readiness check will
+	// be added to the user-defined CEL expressions.
+	AdditiveCELDependencyCheck = "AdditiveCELDependencyCheck"
+
+	// ExternalArtifact controls whether the ExternalArtifact source type is enabled.
+	ExternalArtifact = "ExternalArtifact"
 )
 
 var features = map[string]bool{
@@ -79,6 +98,22 @@ var features = map[string]bool{
 	// AdoptLegacyReleases
 	// opt-out from v0.37
 	AdoptLegacyReleases: true,
+	// DisableChartDigestTracking
+	// opt-in from v1.3.0
+	DisableChartDigestTracking: false,
+	// AdditiveCELDependencyCheck
+	// opt-in from v1.4.0
+	AdditiveCELDependencyCheck: false,
+	// ExternalArtifact
+	// opt-in from v1.4.0
+	ExternalArtifact: false,
+	// DisableConfigWatchers
+	// opt-in from v1.4.4
+	controller.FeatureGateDisableConfigWatchers: false,
+}
+
+func init() {
+	auth.SetFeatureGates(features)
 }
 
 // FeatureGates contains a list of all supported feature gates and

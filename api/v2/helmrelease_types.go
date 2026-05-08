@@ -42,27 +42,6 @@ const (
 	defaultMaxHistory = 5
 )
 
-// Kustomize Helm PostRenderer specification.
-type Kustomize struct {
-	// Strategic merge and JSON patches, defined as inline YAML objects,
-	// capable of targeting objects based on kind, label and annotation selectors.
-	// +optional
-	Patches []kustomize.Patch `json:"patches,omitempty"`
-
-	// Images is a list of (image name, new name, new tag or digest)
-	// for changing image names, tags or digests. This can also be achieved with a
-	// patch, but this operator is simpler to specify.
-	// +optional
-	Images []kustomize.Image `json:"images,omitempty" json:"images,omitempty"`
-}
-
-// PostRenderer contains a Helm PostRenderer specification.
-type PostRenderer struct {
-	// Kustomization to apply as PostRenderer.
-	// +optional
-	Kustomize *Kustomize `json:"kustomize,omitempty"`
-}
-
 // HelmReleaseSpec defines the desired state of a Helm release.
 // +kubebuilder:validation:XValidation:rule="(has(self.chart) && !has(self.chartRef)) || (!has(self.chart) && has(self.chartRef))", message="either chart or chartRef must be set"
 type HelmReleaseSpec struct {
@@ -121,11 +100,11 @@ type HelmReleaseSpec struct {
 	// +optional
 	StorageNamespace string `json:"storageNamespace,omitempty"`
 
-	// DependsOn may contain a meta.NamespacedObjectReference slice with
+	// DependsOn may contain a DependencyReference slice with
 	// references to HelmRelease resources that must be ready before this HelmRelease
 	// can be reconciled.
 	// +optional
-	DependsOn []meta.NamespacedObjectReference `json:"dependsOn,omitempty"`
+	DependsOn []DependencyReference `json:"dependsOn,omitempty"`
 
 	// Timeout is the time to wait for any individual Kubernetes operation (like Jobs
 	// for hooks) during the performance of a Helm action. Defaults to '5m0s'.
@@ -195,10 +174,52 @@ type HelmReleaseSpec struct {
 	// +optional
 	Values *apiextensionsv1.JSON `json:"values,omitempty"`
 
+	// CommonMetadata specifies the common labels and annotations that are
+	// applied to all resources. Any existing label or annotation will be
+	// overridden if its key matches a common one.
+	// +optional
+	CommonMetadata *CommonMetadata `json:"commonMetadata,omitempty"`
+
 	// PostRenderers holds an array of Helm PostRenderers, which will be applied in order
 	// of their definition.
 	// +optional
 	PostRenderers []PostRenderer `json:"postRenderers,omitempty"`
+}
+
+// +kubebuilder:object:generate=false
+
+type ValuesReference = meta.ValuesReference
+
+// Kustomize Helm PostRenderer specification.
+type Kustomize struct {
+	// Strategic merge and JSON patches, defined as inline YAML objects,
+	// capable of targeting objects based on kind, label and annotation selectors.
+	// +optional
+	Patches []kustomize.Patch `json:"patches,omitempty"`
+
+	// Images is a list of (image name, new name, new tag or digest)
+	// for changing image names, tags or digests. This can also be achieved with a
+	// patch, but this operator is simpler to specify.
+	// +optional
+	Images []kustomize.Image `json:"images,omitempty" json:"images,omitempty"`
+}
+
+// CommonMetadata defines the common labels and annotations.
+type CommonMetadata struct {
+	// Annotations to be added to the object's metadata.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// Labels to be added to the object's metadata.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// PostRenderer contains a Helm PostRenderer specification.
+type PostRenderer struct {
+	// Kustomization to apply as PostRenderer.
+	// +optional
+	Kustomize *Kustomize `json:"kustomize,omitempty"`
 }
 
 // DriftDetectionMode represents the modes in which a controller can detect and
@@ -416,6 +437,20 @@ type Remediation interface {
 	RetriesExhausted(hr *HelmRelease) bool
 }
 
+// Strategy defines a consistent interface for InstallStrategy and
+// UpgradeStrategy.
+// +kubebuilder:object:generate=false
+type Strategy interface {
+	GetRetry() Retry
+}
+
+// Retry defines a consistent interface for retry strategies from
+// InstallStrategy and UpgradeStrategy.
+// +kubebuilder:object:generate=false
+type Retry interface {
+	GetRetryInterval() time.Duration
+}
+
 // Install holds the configuration for Helm install actions performed for this
 // HelmRelease.
 type Install struct {
@@ -427,10 +462,20 @@ type Install struct {
 	// +optional
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
 
+	// Strategy defines the install strategy to use for this HelmRelease.
+	// Defaults to 'RemediateOnFailure'.
+	// +optional
+	Strategy *InstallStrategy `json:"strategy,omitempty"`
+
 	// Remediation holds the remediation configuration for when the Helm install
 	// action for the HelmRelease fails. The default is to not perform any action.
 	// +optional
 	Remediation *InstallRemediation `json:"remediation,omitempty"`
+
+	// DisableTakeOwnership disables taking ownership of existing resources
+	// during the Helm install action. Defaults to false.
+	// +optional
+	DisableTakeOwnership bool `json:"disableTakeOwnership,omitempty"`
 
 	// DisableWait disables the waiting for resources to be ready after a Helm
 	// install has been performed.
@@ -450,6 +495,11 @@ type Install struct {
 	// rendered templates against the Kubernetes OpenAPI Schema.
 	// +optional
 	DisableOpenAPIValidation bool `json:"disableOpenAPIValidation,omitempty"`
+
+	// DisableSchemaValidation prevents the Helm install action from validating
+	// the values against the JSON Schema.
+	// +optional
+	DisableSchemaValidation bool `json:"disableSchemaValidation,omitempty"`
 
 	// Replace tells the Helm install action to re-use the 'ReleaseName', but only
 	// if that name is a deleted release which remains in the history.
@@ -508,6 +558,41 @@ func (in Install) GetRemediation() Remediation {
 		return InstallRemediation{}
 	}
 	return *in.Remediation
+}
+
+// GetRetry returns the configured retry strategy for the Helm install
+// action.
+func (in Install) GetRetry() Retry {
+	if in.Strategy == nil || in.Strategy.Name != string(ActionStrategyRetryOnFailure) {
+		return nil
+	}
+	return in.Strategy
+}
+
+// InstallStrategy holds the configuration for Helm install strategy.
+// +kubebuilder:validation:XValidation:rule="!has(self.retryInterval) || self.name != 'RemediateOnFailure'", message=".retryInterval cannot be set when .name is 'RemediateOnFailure'"
+type InstallStrategy struct {
+	// Name of the install strategy.
+	// +kubebuilder:validation:Enum=RemediateOnFailure;RetryOnFailure
+	// +required
+	Name string `json:"name"`
+
+	// RetryInterval is the interval at which to retry a failed install.
+	// Can be used only when Name is set to RetryOnFailure.
+	// Defaults to '5m'.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
+	// +optional
+	RetryInterval *metav1.Duration `json:"retryInterval,omitempty"`
+}
+
+// GetRetryInterval returns the configured retry interval for the Helm install
+// action, or the default.
+func (in InstallStrategy) GetRetryInterval() time.Duration {
+	if in.RetryInterval == nil {
+		return 5 * time.Minute
+	}
+	return in.RetryInterval.Duration
 }
 
 // InstallRemediation holds the configuration for Helm install remediation.
@@ -600,10 +685,20 @@ type Upgrade struct {
 	// +optional
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
 
+	// Strategy defines the upgrade strategy to use for this HelmRelease.
+	// Defaults to 'RemediateOnFailure'.
+	// +optional
+	Strategy *UpgradeStrategy `json:"strategy,omitempty"`
+
 	// Remediation holds the remediation configuration for when the Helm upgrade
 	// action for the HelmRelease fails. The default is to not perform any action.
 	// +optional
 	Remediation *UpgradeRemediation `json:"remediation,omitempty"`
+
+	// DisableTakeOwnership disables taking ownership of existing resources
+	// during the Helm upgrade action. Defaults to false.
+	// +optional
+	DisableTakeOwnership bool `json:"disableTakeOwnership,omitempty"`
 
 	// DisableWait disables the waiting for resources to be ready after a Helm
 	// upgrade has been performed.
@@ -623,6 +718,11 @@ type Upgrade struct {
 	// rendered templates against the Kubernetes OpenAPI Schema.
 	// +optional
 	DisableOpenAPIValidation bool `json:"disableOpenAPIValidation,omitempty"`
+
+	// DisableSchemaValidation prevents the Helm upgrade action from validating
+	// the values against the JSON Schema.
+	// +optional
+	DisableSchemaValidation bool `json:"disableSchemaValidation,omitempty"`
 
 	// Force forces resource updates through a replacement strategy.
 	// +optional
@@ -676,6 +776,41 @@ func (in Upgrade) GetRemediation() Remediation {
 		return UpgradeRemediation{}
 	}
 	return *in.Remediation
+}
+
+// GetRetry returns the configured retry strategy for the Helm upgrade
+// action.
+func (in Upgrade) GetRetry() Retry {
+	if in.Strategy == nil || in.Strategy.Name != string(ActionStrategyRetryOnFailure) {
+		return nil
+	}
+	return in.Strategy
+}
+
+// UpgradeStrategy holds the configuration for Helm upgrade strategy.
+// +kubebuilder:validation:XValidation:rule="!has(self.retryInterval) || self.name == 'RetryOnFailure'", message=".retryInterval can only be set when .name is 'RetryOnFailure'"
+type UpgradeStrategy struct {
+	// Name of the upgrade strategy.
+	// +kubebuilder:validation:Enum=RemediateOnFailure;RetryOnFailure
+	// +required
+	Name string `json:"name"`
+
+	// RetryInterval is the interval at which to retry a failed upgrade.
+	// Can be used only when Name is set to RetryOnFailure.
+	// Defaults to '5m'.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
+	// +optional
+	RetryInterval *metav1.Duration `json:"retryInterval,omitempty"`
+}
+
+// GetRetryInterval returns the configured retry interval for the Helm upgrade
+// action, or the default.
+func (in UpgradeStrategy) GetRetryInterval() time.Duration {
+	if in.RetryInterval == nil {
+		return 5 * time.Minute
+	}
+	return in.RetryInterval.Duration
 }
 
 // UpgradeRemediation holds the configuration for Helm upgrade remediation.
@@ -749,6 +884,19 @@ func (in UpgradeRemediation) IncrementFailureCount(hr *HelmRelease) {
 func (in UpgradeRemediation) RetriesExhausted(hr *HelmRelease) bool {
 	return in.Retries >= 0 && in.GetFailureCount(hr) > int64(in.Retries)
 }
+
+// ActionStrategyName is a valid name for an action strategy.
+type ActionStrategyName string
+
+const (
+	// ActionStrategyRemediateOnFailure is the action strategy name for
+	// remediate on failure.
+	ActionStrategyRemediateOnFailure ActionStrategyName = "RemediateOnFailure"
+
+	// ActionStrategyRetryOnFailure is the action strategy name for retry on
+	// failure.
+	ActionStrategyRetryOnFailure ActionStrategyName = "RetryOnFailure"
+)
 
 // RemediationStrategy returns the strategy to use to remediate a failed install
 // or upgrade.
@@ -938,6 +1086,11 @@ type HelmReleaseStatus struct {
 	// +optional
 	ObservedPostRenderersDigest string `json:"observedPostRenderersDigest,omitempty"`
 
+	// ObservedCommonMetadataDigest is the digest for the common metadata of
+	// the last successful reconciliation attempt.
+	// +optional
+	ObservedCommonMetadataDigest string `json:"observedCommonMetadataDigest,omitempty"`
+
 	// LastAttemptedGeneration is the last generation the controller attempted
 	// to reconcile.
 	// +optional
@@ -966,10 +1119,17 @@ type HelmReleaseStatus struct {
 	History Snapshots `json:"history,omitempty"`
 
 	// LastAttemptedReleaseAction is the last release action performed for this
-	// HelmRelease. It is used to determine the active remediation strategy.
+	// HelmRelease. It is used to determine the active retry or remediation
+	// strategy.
 	// +kubebuilder:validation:Enum=install;upgrade
 	// +optional
 	LastAttemptedReleaseAction ReleaseAction `json:"lastAttemptedReleaseAction,omitempty"`
+
+	// LastAttemptedReleaseActionDuration is the duration of the last
+	// release action performed for this HelmRelease.
+	// +kubebuilder:validation:Type=string
+	// +optional
+	LastAttemptedReleaseActionDuration *metav1.Duration `json:"lastAttemptedReleaseActionDuration,omitempty"`
 
 	// Failures is the reconciliation failure count against the latest desired
 	// state. It is reset after a successful reconciliation.
@@ -999,11 +1159,13 @@ type HelmReleaseStatus struct {
 
 	// LastAttemptedValuesChecksum is the SHA1 checksum for the values of the last
 	// reconciliation attempt.
+	//
 	// Deprecated: Use LastAttemptedConfigDigest instead.
 	// +optional
 	LastAttemptedValuesChecksum string `json:"lastAttemptedValuesChecksum,omitempty"`
 
 	// LastReleaseRevision is the revision of the last successful Helm release.
+	//
 	// Deprecated: Use History instead.
 	// +optional
 	LastReleaseRevision int `json:"lastReleaseRevision,omitempty"`
@@ -1013,17 +1175,13 @@ type HelmReleaseStatus struct {
 	// +optional
 	LastAttemptedConfigDigest string `json:"lastAttemptedConfigDigest,omitempty"`
 
-	// LastHandledForceAt holds the value of the most recent force request
-	// value, so a change of the annotation value can be detected.
-	// +optional
-	LastHandledForceAt string `json:"lastHandledForceAt,omitempty"`
-
 	// LastHandledResetAt holds the value of the most recent reset request
 	// value, so a change of the annotation value can be detected.
 	// +optional
 	LastHandledResetAt string `json:"lastHandledResetAt,omitempty"`
 
 	meta.ReconcileRequestStatus `json:",inline"`
+	meta.ForceRequestStatus     `json:",inline"`
 }
 
 // ClearHistory clears the History.
@@ -1145,6 +1303,19 @@ func (in HelmRelease) GetActiveRemediation() Remediation {
 	}
 }
 
+// GetActiveRetry returns the active retry configuration for the
+// HelmRelease.
+func (in HelmRelease) GetActiveRetry() Retry {
+	switch in.Status.LastAttemptedReleaseAction {
+	case ReleaseActionInstall:
+		return in.GetInstall().GetRetry()
+	case ReleaseActionUpgrade:
+		return in.GetUpgrade().GetRetry()
+	default:
+		return nil
+	}
+}
+
 // GetRequeueAfter returns the duration after which the HelmRelease
 // must be reconciled again.
 func (in HelmRelease) GetRequeueAfter() time.Duration {
@@ -1221,9 +1392,19 @@ func (in HelmRelease) UsePersistentClient() bool {
 	return *in.Spec.PersistentClient
 }
 
-// GetDependsOn returns the list of dependencies across-namespaces.
+// GetDependsOn returns the dependencies as a list of meta.NamespacedObjectReference.
+//
+// This function makes the HelmRelease type conformant with the meta.ObjectWithDependencies interface
+// and allows the controller-runtime to index HelmReleases by their dependencies.
 func (in HelmRelease) GetDependsOn() []meta.NamespacedObjectReference {
-	return in.Spec.DependsOn
+	deps := make([]meta.NamespacedObjectReference, len(in.Spec.DependsOn))
+	for i := range in.Spec.DependsOn {
+		deps[i] = meta.NamespacedObjectReference{
+			Name:      in.Spec.DependsOn[i].Name,
+			Namespace: in.Spec.DependsOn[i].Namespace,
+		}
+	}
+	return deps
 }
 
 // GetConditions returns the status conditions of the object.
@@ -1244,6 +1425,16 @@ func (in *HelmRelease) HasChartRef() bool {
 // HasChartTemplate returns true if the HelmRelease has a ChartTemplate.
 func (in *HelmRelease) HasChartTemplate() bool {
 	return in.Spec.Chart != nil
+}
+
+// GetLastHandledReconcileRequest returns the last handled reconcile request.
+func (in HelmRelease) GetLastHandledReconcileRequest() string {
+	return in.Status.GetLastHandledReconcileRequest()
+}
+
+// GetLastHandledForceRequestStatus returns the last handled force request status.
+func (in *HelmRelease) GetLastHandledForceRequestStatus() *string {
+	return &in.Status.LastHandledForceAt
 }
 
 // +kubebuilder:object:root=true
