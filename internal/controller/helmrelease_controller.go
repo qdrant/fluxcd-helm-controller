@@ -431,8 +431,10 @@ func (r *HelmReleaseReconciler) reconcileDelete(ctx context.Context, obj *v2.Hel
 		controllerutil.RemoveFinalizer(obj, v2.HelmReleaseFinalizer)
 
 		// Cleanup caches.
-		r.TokenCache.DeleteEventsForObject(v2.HelmReleaseKind,
-			obj.GetName(), obj.GetNamespace(), cache.OperationReconcile)
+		if r.TokenCache != nil {
+			r.TokenCache.DeleteEventsForObject(v2.HelmReleaseKind,
+				obj.GetName(), obj.GetNamespace(), cache.OperationReconcile)
+		}
 
 		// Stop reconciliation as the object is being deleted.
 		return ctrl.Result{}, nil
