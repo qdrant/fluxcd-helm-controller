@@ -180,7 +180,7 @@ install-envtest: setup-envtest
 ENVTEST = $(GOBIN)/setup-envtest
 .PHONY: envtest
 setup-envtest: ## Download envtest-setup locally if necessary.
-	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
+	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.22.4)
 
 # go-install-tool will 'go install' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
