@@ -20,17 +20,17 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/fluxcd/pkg/runtime/logger"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
-	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/fluxcd/pkg/chartutil"
 	"github.com/fluxcd/pkg/runtime/conditions"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
-	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
 )
 
@@ -57,21 +57,23 @@ import (
 // The caller is assumed to have verified the integrity of Request.Object using
 // e.g. action.VerifySnapshot before calling Reconcile.
 type Install struct {
-	configFactory *action.ConfigFactory
-	eventRecorder record.EventRecorder
+	configFactory           *action.ConfigFactory
+	eventRecorder           record.EventRecorder
+	defaultToRetryOnFailure bool
 }
 
 // NewInstall returns a new Install reconciler configured with the provided
 // values.
-func NewInstall(cfg *action.ConfigFactory, recorder record.EventRecorder) *Install {
-	return &Install{configFactory: cfg, eventRecorder: recorder}
+func NewInstall(cfg *action.ConfigFactory, recorder record.EventRecorder, defaultToRetryOnFailure bool) *Install {
+	return &Install{configFactory: cfg, eventRecorder: recorder, defaultToRetryOnFailure: defaultToRetryOnFailure}
 }
 
 func (r *Install) Reconcile(ctx context.Context, req *Request) error {
 	var (
-		logBuf      = action.NewLogBuffer(action.NewDebugLog(ctrl.LoggerFrom(ctx).V(logger.DebugLevel)), 10)
+		logBuf      = action.NewDebugLogBuffer(ctx)
 		obsReleases = make(observedReleases)
-		cfg         = r.configFactory.Build(logBuf.Log, observeRelease(obsReleases))
+		cfg         = r.configFactory.Build(logBuf, observeRelease(obsReleases), observeInventory(req.Object, req.Chart, r.configFactory.Getter, r.eventRecorder))
+		startTime   = time.Now()
 	)
 
 	defer summarize(req)
@@ -91,8 +93,13 @@ func (r *Install) Reconcile(ctx context.Context, req *Request) error {
 	// Run the Helm install action.
 	_, err := action.Install(ctx, cfg, req.Object, req.Chart, req.Values)
 
+	// Record the action duration in status.
+	req.Object.Status.LastAttemptedReleaseActionDuration = &metav1.Duration{Duration: time.Since(startTime)}
+
 	// Record the history of releases observed during the install.
-	obsReleases.recordOnObject(req.Object, mutateOCIDigest)
+	obsReleases.recordOnObject(req.Object,
+		mutateOCIDigest,
+		mutateAction(v2.ReleaseActionInstall))
 
 	if err != nil {
 		r.failure(req, logBuf, err)
@@ -177,6 +184,12 @@ func (r *Install) success(req *Request) {
 	if req.Object.GetTest().Enable && !cur.HasBeenTested() {
 		conditions.MarkUnknown(req.Object, v2.TestSuccessCondition, "AwaitingTests", fmtTestPending,
 			cur.FullReleaseName(), cur.VersionedChartName())
+	}
+
+	// Failures are only relevant while the release is failed
+	// when a retry strategy is configured.
+	if req.Object.GetInstall().GetRetry(r.defaultToRetryOnFailure) != nil {
+		req.Object.Status.ClearFailures()
 	}
 
 	// Record event.

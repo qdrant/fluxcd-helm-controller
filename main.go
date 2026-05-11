@@ -22,7 +22,7 @@ import (
 	"time"
 
 	flag "github.com/spf13/pflag"
-	"helm.sh/helm/v3/pkg/kube"
+	"helm.sh/helm/v4/pkg/kube"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -33,8 +33,11 @@ import (
 	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcfg "sigs.k8s.io/controller-runtime/pkg/config"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/fluxcd/pkg/auth"
+	"github.com/fluxcd/pkg/cache"
 	"github.com/fluxcd/pkg/runtime/acl"
 	"github.com/fluxcd/pkg/runtime/client"
 	helper "github.com/fluxcd/pkg/runtime/controller"
@@ -47,15 +50,14 @@ import (
 	"github.com/fluxcd/pkg/runtime/pprof"
 	"github.com/fluxcd/pkg/runtime/probes"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
-	sourcev1beta2 "github.com/fluxcd/source-controller/api/v1beta2"
-
-	v2 "github.com/fluxcd/helm-controller/api/v2"
-	intdigest "github.com/fluxcd/helm-controller/internal/digest"
 
 	// +kubebuilder:scaffold:imports
 
+	v2 "github.com/fluxcd/helm-controller/api/v2"
 	intacl "github.com/fluxcd/helm-controller/internal/acl"
+	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/controller"
+	intdigest "github.com/fluxcd/helm-controller/internal/digest"
 	"github.com/fluxcd/helm-controller/internal/features"
 	intkube "github.com/fluxcd/helm-controller/internal/kube"
 	"github.com/fluxcd/helm-controller/internal/oomwatch"
@@ -72,34 +74,40 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(sourcev1.AddToScheme(scheme))
-	utilruntime.Must(sourcev1beta2.AddToScheme(scheme))
 	utilruntime.Must(v2.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
 func main() {
+	const (
+		tokenCacheDefaultMaxSize = 100
+	)
+
 	var (
-		metricsAddr               string
-		eventsAddr                string
-		healthAddr                string
-		concurrent                int
-		requeueDependency         time.Duration
-		gracefulShutdownTimeout   time.Duration
-		httpRetry                 int
-		clientOptions             client.Options
-		kubeConfigOpts            client.KubeConfigOptions
-		featureGates              feathelper.FeatureGates
-		logOptions                logger.Options
-		aclOptions                acl.Options
-		leaderElectionOptions     leaderelection.Options
-		rateLimiterOptions        helper.RateLimiterOptions
-		watchOptions              helper.WatchOptions
-		intervalJitterOptions     jitter.IntervalOptions
-		oomWatchInterval          time.Duration
-		oomWatchMemoryThreshold   uint8
-		oomWatchMaxMemoryPath     string
-		oomWatchCurrentMemoryPath string
-		snapshotDigestAlgo        string
+		metricsAddr                     string
+		eventsAddr                      string
+		healthAddr                      string
+		concurrent                      int
+		requeueDependency               time.Duration
+		gracefulShutdownTimeout         time.Duration
+		httpRetry                       int
+		clientOptions                   client.Options
+		kubeConfigOpts                  client.KubeConfigOptions
+		featureGates                    feathelper.FeatureGates
+		logOptions                      logger.Options
+		aclOptions                      acl.Options
+		leaderElectionOptions           leaderelection.Options
+		rateLimiterOptions              helper.RateLimiterOptions
+		watchOptions                    helper.WatchOptions
+		intervalJitterOptions           jitter.IntervalOptions
+		oomWatchInterval                time.Duration
+		oomWatchMemoryThreshold         uint8
+		oomWatchMaxMemoryPath           string
+		oomWatchCurrentMemoryPath       string
+		snapshotDigestAlgo              string
+		disallowedFieldManagers         []string
+		tokenCacheOptions               cache.TokenFlags
+		defaultKubeConfigServiceAccount string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080",
@@ -116,8 +124,10 @@ func main() {
 		"The duration given to the reconciler to finish before forcibly stopping.")
 	flag.IntVar(&httpRetry, "http-retry", 9,
 		"The maximum number of retries when failing to fetch artifacts over HTTP.")
-	flag.StringVar(&intkube.DefaultServiceAccountName, "default-service-account", "",
+	flag.StringVar(&intkube.DefaultServiceAccountName, auth.ControllerFlagDefaultServiceAccount, "",
 		"Default service account used for impersonation.")
+	flag.StringVar(&defaultKubeConfigServiceAccount, auth.ControllerFlagDefaultKubeConfigServiceAccount, "",
+		"Default service account used for kubeconfig.")
 	flag.Uint8Var(&oomWatchMemoryThreshold, "oom-watch-memory-threshold", 95,
 		"The memory threshold in percentage at which the OOM watcher will trigger a graceful shutdown. Requires feature gate 'OOMWatch' to be enabled.")
 	flag.DurationVar(&oomWatchInterval, "oom-watch-interval", 500*time.Millisecond,
@@ -128,6 +138,8 @@ func main() {
 		"The path to the cgroup current memory usage file. Requires feature gate 'OOMWatch' to be enabled. If not set, the path will be automatically detected.")
 	flag.StringVar(&snapshotDigestAlgo, "snapshot-digest-algo", intdigest.Canonical.String(),
 		"The algorithm to use to calculate the digest of Helm release storage snapshots.")
+	flag.StringArrayVar(&disallowedFieldManagers, "override-manager", []string{},
+		"List of field managers to override during drift detection.")
 
 	clientOptions.BindFlags(flag.CommandLine)
 	logOptions.BindFlags(flag.CommandLine)
@@ -138,6 +150,7 @@ func main() {
 	featureGates.BindFlags(flag.CommandLine)
 	watchOptions.BindFlags(flag.CommandLine)
 	intervalJitterOptions.BindFlags(flag.CommandLine)
+	tokenCacheOptions.BindFlags(flag.CommandLine, tokenCacheDefaultMaxSize)
 
 	flag.Parse()
 
@@ -147,6 +160,43 @@ func main() {
 		SupportedFeatures(features.FeatureGates())
 	if err != nil {
 		setupLog.Error(err, "unable to load feature gates")
+		os.Exit(1)
+	}
+
+	switch enabled, err := features.Enabled(auth.FeatureGateObjectLevelWorkloadIdentity); {
+	case err != nil:
+		setupLog.Error(err, "unable to check feature gate "+auth.FeatureGateObjectLevelWorkloadIdentity)
+		os.Exit(1)
+	case enabled:
+		auth.EnableObjectLevelWorkloadIdentity()
+	}
+
+	switch enabled, err := features.Enabled(features.UseHelm3Defaults); {
+	case err != nil:
+		setupLog.Error(err, "unable to check feature gate "+features.UseHelm3Defaults)
+		os.Exit(1)
+	case enabled:
+		action.UseHelm3Defaults = enabled
+	}
+
+	defaultToRetryOnFailure, err := features.Enabled(features.DefaultToRetryOnFailure)
+	if err != nil {
+		setupLog.Error(err, "unable to check feature gate "+features.DefaultToRetryOnFailure)
+		os.Exit(1)
+	}
+
+	cancelHealthCheckOnNewRevision, err := features.Enabled(features.CancelHealthCheckOnNewRevision)
+	if err != nil {
+		setupLog.Error(err, "unable to check feature gate "+features.CancelHealthCheckOnNewRevision)
+		os.Exit(1)
+	}
+
+	if defaultKubeConfigServiceAccount != "" {
+		auth.SetDefaultKubeConfigServiceAccount(defaultKubeConfigServiceAccount)
+	}
+
+	if auth.InconsistentObjectLevelConfiguration() {
+		setupLog.Error(auth.ErrInconsistentObjectLevelConfiguration, "invalid configuration")
 		os.Exit(1)
 	}
 
@@ -166,10 +216,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	var disableCacheFor []ctrlclient.Object
-	shouldCache, err := features.Enabled(features.CacheSecretsAndConfigMaps)
+	watchConfigsPredicate, err := helper.GetWatchConfigsPredicate(watchOptions)
 	if err != nil {
-		setupLog.Error(err, "unable to check feature gate CacheSecretsAndConfigMaps")
+		setupLog.Error(err, "unable to configure watch configs label selector for controller")
+		os.Exit(1)
+	}
+
+	var disableCacheFor []ctrlclient.Object
+	shouldCache, err := features.Enabled(helper.FeatureGateCacheSecretsAndConfigMaps)
+	if err != nil {
+		setupLog.Error(err, "unable to check feature gate "+helper.FeatureGateCacheSecretsAndConfigMaps)
 		os.Exit(1)
 	}
 	if !shouldCache {
@@ -179,6 +235,23 @@ func main() {
 	leaderElectionId := fmt.Sprintf("%s-%s", controllerName, "leader-election")
 	if watchOptions.LabelSelector != "" {
 		leaderElectionId = leaderelection.GenerateID(leaderElectionId, watchOptions.LabelSelector)
+	}
+
+	disableChartDigestTracking, err := features.Enabled(features.DisableChartDigestTracking)
+	if err != nil {
+		setupLog.Error(err, "unable to check feature gate "+features.DisableChartDigestTracking)
+		os.Exit(1)
+	}
+
+	additiveCELDependencyCheck, err := features.Enabled(helper.FeatureGateAdditiveCELDependencyCheck)
+	if err != nil {
+		setupLog.Error(err, "unable to check feature gate "+helper.FeatureGateAdditiveCELDependencyCheck)
+		os.Exit(1)
+	}
+
+	if ok, _ := features.Enabled(features.AdoptLegacyReleases); ok {
+		setupLog.Info("warning: the 'AdoptLegacyReleases' feature gate is ignored and has no effect since v1.5.0, " +
+			"adoption of HelmRelease resources in legacy API versions is no longer supported")
 	}
 
 	// Set the managedFields owner for resources reconciled from Helm charts.
@@ -232,7 +305,7 @@ func main() {
 
 	if watchNamespace != "" {
 		mgrConfig.Cache.DefaultNamespaces = map[string]ctrlcache.Config{
-			watchNamespace: ctrlcache.Config{},
+			watchNamespace: {},
 		}
 	}
 
@@ -268,18 +341,65 @@ func main() {
 		ctx = ow.Watch(ctx)
 	}
 
+	var tokenCache *cache.TokenCache
+	if tokenCacheOptions.MaxSize > 0 {
+		var err error
+		tokenCache, err = cache.NewTokenCache(tokenCacheOptions.MaxSize,
+			cache.WithMaxDuration(tokenCacheOptions.MaxDuration),
+			cache.WithMetricsRegisterer(ctrlmetrics.Registry),
+			cache.WithMetricsPrefix("gotk_token_"))
+		if err != nil {
+			setupLog.Error(err, "unable to create token cache")
+			os.Exit(1)
+		}
+	}
+
+	allowExternalArtifact, err := features.Enabled(helper.FeatureGateExternalArtifact)
+	if err != nil {
+		setupLog.Error(err, "unable to check feature gate "+helper.FeatureGateExternalArtifact)
+		os.Exit(1)
+	}
+
+	directSourceFetch, err := features.Enabled(helper.FeatureGateDirectSourceFetch)
+	if err != nil {
+		setupLog.Error(err, "unable to check feature gate "+helper.FeatureGateDirectSourceFetch)
+		os.Exit(1)
+	}
+	if directSourceFetch {
+		setupLog.Info("DirectSourceFetch feature gate is enabled, source objects will be fetched directly from the API server")
+	}
+
+	disableConfigWatchers, err := features.Enabled(helper.FeatureGateDisableConfigWatchers)
+	if err != nil {
+		setupLog.Error(err, "unable to check feature gate "+helper.FeatureGateDisableConfigWatchers)
+		os.Exit(1)
+	}
+	watchConfigs := !disableConfigWatchers
+
 	if err = (&controller.HelmReleaseReconciler{
-		Client:           mgr.GetClient(),
-		EventRecorder:    eventRecorder,
-		Metrics:          metricsH,
-		GetClusterConfig: ctrl.GetConfig,
-		ClientOpts:       clientOptions,
-		KubeConfigOpts:   kubeConfigOpts,
-		FieldManager:     controllerName,
+		Client:                     mgr.GetClient(),
+		APIReader:                  mgr.GetAPIReader(),
+		EventRecorder:              eventRecorder,
+		Metrics:                    metricsH,
+		GetClusterConfig:           ctrl.GetConfig,
+		ClientOpts:                 clientOptions,
+		KubeConfigOpts:             kubeConfigOpts,
+		FieldManager:               controllerName,
+		DefaultToRetryOnFailure:    defaultToRetryOnFailure,
+		DisableChartDigestTracking: disableChartDigestTracking,
+		AdditiveCELDependencyCheck: additiveCELDependencyCheck,
+		DirectSourceFetch:          directSourceFetch,
+		TokenCache:                 tokenCache,
+		DependencyRequeueInterval:  requeueDependency,
+		ArtifactFetchRetries:       httpRetry,
+		AllowExternalArtifact:      allowExternalArtifact,
+		DisallowedFieldManagers:    disallowedFieldManagers,
 	}).SetupWithManager(ctx, mgr, controller.HelmReleaseReconcilerOptions{
-		DependencyRequeueInterval: requeueDependency,
-		HTTPRetry:                 httpRetry,
-		RateLimiter:               helper.GetRateLimiter(rateLimiterOptions),
+		RateLimiter:                helper.GetRateLimiter(rateLimiterOptions),
+		WatchConfigs:               watchConfigs,
+		WatchConfigsPredicate:      watchConfigsPredicate,
+		WatchExternalArtifacts:     allowExternalArtifact,
+		CancelHealthCheckOnRequeue: cancelHealthCheckOnNewRevision,
 	}); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", v2.HelmReleaseKind)
 		os.Exit(1)

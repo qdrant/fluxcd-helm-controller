@@ -24,11 +24,12 @@ import (
 
 	. "github.com/onsi/gomega"
 	extjsondiff "github.com/wI2L/jsondiff"
-	helmchart "helm.sh/helm/v3/pkg/chart"
-	helmrelease "helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/releaseutil"
-	helmstorage "helm.sh/helm/v3/pkg/storage"
-	helmdriver "helm.sh/helm/v3/pkg/storage/driver"
+	helmchart "helm.sh/helm/v4/pkg/chart/v2"
+	helmreleasecommon "helm.sh/helm/v4/pkg/release/common"
+	helmrelease "helm.sh/helm/v4/pkg/release/v1"
+	releaseutil "helm.sh/helm/v4/pkg/release/v1/util"
+	helmstorage "helm.sh/helm/v4/pkg/storage"
+	helmdriver "helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -148,7 +149,7 @@ func TestAtomicRelease_Reconcile(t *testing.T) {
 					Enable: true,
 				},
 				StorageNamespace: releaseNamespace,
-				Timeout:          &metav1.Duration{Duration: 100 * time.Millisecond},
+				Timeout:          &metav1.Duration{Duration: 200 * time.Second},
 			},
 		}
 
@@ -177,7 +178,7 @@ func TestAtomicRelease_Reconcile(t *testing.T) {
 			Chart:  testutil.BuildChart(testutil.ChartWithTestHook()),
 			Values: nil,
 		}
-		g.Expect(NewAtomicRelease(patchHelper, cfg, recorder, testFieldManager).Reconcile(context.TODO(), req)).ToNot(HaveOccurred())
+		g.Expect(NewAtomicRelease(patchHelper, cfg, recorder, testFieldManager, nil, false).Reconcile(context.TODO(), req)).ToNot(HaveOccurred())
 
 		g.Expect(obj.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
 			{
@@ -206,7 +207,7 @@ func TestAtomicRelease_Reconcile(t *testing.T) {
 		g.Expect(obj.Status.InstallFailures).To(BeZero())
 		g.Expect(obj.Status.UpgradeFailures).To(BeZero())
 
-		endState, err := DetermineReleaseState(ctx, cfg, req)
+		endState, err := DetermineReleaseState(ctx, cfg, req, nil)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(endState).To(Equal(ReleaseState{Status: ReleaseStatusInSync}))
 	})
@@ -219,7 +220,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 		spec          func(spec *v2.HelmReleaseSpec)
 		status        func(namespace string, releases []*helmrelease.Release) v2.HelmReleaseStatus
 		chart         *helmchart.Chart
-		values        map[string]interface{}
+		values        map[string]any
 		expectHistory func(releases []*helmrelease.Release) v2.Snapshots
 		wantErr       error
 	}{
@@ -232,7 +233,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}, testutil.ReleaseWithConfig(nil)),
 				}
 			},
@@ -260,7 +261,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}, testutil.ReleaseWithConfig(nil)),
 				}
 			},
@@ -275,7 +276,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			values: nil,
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					observeReleaseWithAction(releases[1], v2.ReleaseActionUpgrade),
 					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 				}
 			},
@@ -289,8 +290,8 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
-					}, testutil.ReleaseWithConfig(map[string]interface{}{"foo": "bar"})),
+						Status:    helmreleasecommon.StatusDeployed,
+					}, testutil.ReleaseWithConfig(map[string]any{"foo": "bar"})),
 				}
 			},
 			status: func(namespace string, releases []*helmrelease.Release) v2.HelmReleaseStatus {
@@ -301,10 +302,10 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 				}
 			},
 			chart:  testutil.BuildChart(),
-			values: map[string]interface{}{"foo": "baz"},
+			values: map[string]any{"foo": "baz"},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					observeReleaseWithAction(releases[1], v2.ReleaseActionUpgrade),
 					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 				}
 			},
@@ -318,7 +319,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusPendingInstall,
+						Status:    helmreleasecommon.StatusPendingInstall,
 					}, testutil.ReleaseWithConfig(nil)),
 				}
 			},
@@ -330,7 +331,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[len(releases)-1])),
+					observeReleaseWithAction(releases[len(releases)-1], v2.ReleaseActionUpgrade),
 				}
 			},
 		},
@@ -343,14 +344,14 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}, testutil.ReleaseWithConfig(nil)),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   2,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusPendingUpgrade,
+						Status:    helmreleasecommon.StatusPendingUpgrade,
 					}, testutil.ReleaseWithConfig(nil)),
 				}
 			},
@@ -364,7 +365,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[len(releases)-1])),
+					observeReleaseWithAction(releases[len(releases)-1], v2.ReleaseActionUpgrade),
 				}
 			},
 		},
@@ -377,21 +378,21 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}, testutil.ReleaseWithConfig(nil)),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   2,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusFailed,
+						Status:    helmreleasecommon.StatusFailed,
 					}, testutil.ReleaseWithConfig(nil)),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   3,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusPendingRollback,
+						Status:    helmreleasecommon.StatusPendingRollback,
 					}, testutil.ReleaseWithConfig(nil)),
 				}
 			},
@@ -406,7 +407,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[len(releases)-1])),
+					observeReleaseWithAction(releases[len(releases)-1], v2.ReleaseActionUpgrade),
 				}
 			},
 		},
@@ -415,7 +416,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					observeReleaseWithAction(releases[0], v2.ReleaseActionInstall),
 				}
 			},
 		},
@@ -428,14 +429,14 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
 			chart: testutil.BuildChart(),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					observeReleaseWithAction(releases[1], v2.ReleaseActionUpgrade),
 				}
 			},
 		},
@@ -448,27 +449,27 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   3,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   2,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 				}
 			},
 			status: func(namespace string, releases []*helmrelease.Release) v2.HelmReleaseStatus {
 				previousDeployed := release.ObserveRelease(releases[1])
-				previousDeployed.Info.Status = helmrelease.StatusDeployed
+				previousDeployed.Info.Status = helmreleasecommon.StatusDeployed
 
 				return v2.HelmReleaseStatus{
 					History: v2.Snapshots{
@@ -479,7 +480,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[len(releases)-1])),
+					observeReleaseWithAction(releases[len(releases)-1], v2.ReleaseActionUpgrade),
 				}
 			},
 		},
@@ -492,27 +493,27 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   3,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   2,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 				}
 			},
 			status: func(namespace string, releases []*helmrelease.Release) v2.HelmReleaseStatus {
 				modifiedRelease := release.ObserveRelease(releases[1])
-				modifiedRelease.Info.Status = helmrelease.StatusFailed
+				modifiedRelease.Info.Status = helmreleasecommon.StatusFailed
 
 				return v2.HelmReleaseStatus{
 					History: v2.Snapshots{
@@ -523,7 +524,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[len(releases)-1])),
+					observeReleaseWithAction(releases[len(releases)-1], v2.ReleaseActionUpgrade),
 				}
 			},
 		},
@@ -538,7 +539,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 								Namespace: namespace,
 								Version:   1,
 								Chart:     testutil.BuildChart(),
-								Status:    helmrelease.StatusDeployed,
+								Status:    helmreleasecommon.StatusDeployed,
 							}),
 						)),
 					},
@@ -547,7 +548,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					observeReleaseWithAction(releases[0], v2.ReleaseActionInstall),
 				}
 			},
 		},
@@ -560,21 +561,21 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   2,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   3,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -585,7 +586,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   4,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusFailed,
+						Status:    helmreleasecommon.StatusFailed,
 					}),
 				))
 
@@ -599,7 +600,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[len(releases)-1])),
+					observeReleaseWithAction(releases[len(releases)-1], v2.ReleaseActionUpgrade),
 				}
 			},
 		},
@@ -608,7 +609,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(testutil.ChartWithFailingHook()),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					observeReleaseWithAction(releases[0], v2.ReleaseActionInstall),
 				}
 			},
 			wantErr: ErrExceededMaxRetries,
@@ -628,10 +629,31 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(testutil.ChartWithFailingHook()),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					observeReleaseWithAction(releases[0], v2.ReleaseActionUninstallRemediation),
 				}
 			},
 			wantErr: ErrExceededMaxRetries,
+		},
+		{
+			name: "install failure with retry",
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.Install = &v2.Install{
+					Strategy: &v2.InstallStrategy{
+						Name:          "RetryOnFailure",
+						RetryInterval: &metav1.Duration{Duration: time.Minute},
+					},
+				}
+				spec.Uninstall = &v2.Uninstall{
+					KeepHistory: true,
+				}
+			},
+			chart: testutil.BuildChart(testutil.ChartWithFailingHook()),
+			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
+				return v2.Snapshots{
+					observeReleaseWithAction(releases[0], v2.ReleaseActionInstall),
+				}
+			},
+			wantErr: ErrRetryAfterInterval,
 		},
 		{
 			name: "install test failure with remediation",
@@ -650,7 +672,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			},
 			chart: testutil.BuildChart(testutil.ChartWithFailingTestHook()),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
-				snap := release.ObservedToSnapshot(release.ObserveRelease(releases[0]))
+				snap := observeReleaseWithAction(releases[0], v2.ReleaseActionUninstallRemediation)
 				snap.SetTestHooks(release.TestHooksFromRelease(releases[0]))
 
 				return v2.Snapshots{
@@ -658,6 +680,33 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 				}
 			},
 			wantErr: ErrExceededMaxRetries,
+		},
+		{
+			name: "install test failure with retry",
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.Install = &v2.Install{
+					Strategy: &v2.InstallStrategy{
+						Name:          "RetryOnFailure",
+						RetryInterval: &metav1.Duration{Duration: time.Minute},
+					},
+				}
+				spec.Test = &v2.Test{
+					Enable: true,
+				}
+				spec.Uninstall = &v2.Uninstall{
+					KeepHistory: true,
+				}
+			},
+			chart: testutil.BuildChart(testutil.ChartWithFailingTestHook()),
+			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
+				snap := observeReleaseWithAction(releases[0], v2.ReleaseActionInstall)
+				snap.SetTestHooks(release.TestHooksFromRelease(releases[0]))
+
+				return v2.Snapshots{
+					snap,
+				}
+			},
+			wantErr: ErrRetryAfterInterval,
 		},
 		{
 			name: "install test failure with test ignore",
@@ -669,7 +718,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			},
 			chart: testutil.BuildChart(testutil.ChartWithFailingTestHook()),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
-				snap := release.ObservedToSnapshot(release.ObserveRelease(releases[0]))
+				snap := observeReleaseWithAction(releases[0], v2.ReleaseActionInstall)
 				snap.SetTestHooks(release.TestHooksFromRelease(releases[0]))
 
 				return v2.Snapshots{
@@ -688,7 +737,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 								Namespace: namespace,
 								Version:   1,
 								Chart:     testutil.BuildChart(),
-								Status:    helmrelease.StatusUninstalling,
+								Status:    helmreleasecommon.StatusUninstalling,
 							}),
 						)),
 					},
@@ -708,7 +757,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -722,7 +771,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(testutil.ChartWithFailingHook()),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					observeReleaseWithAction(releases[1], v2.ReleaseActionUpgrade),
 					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 				}
 			},
@@ -737,7 +786,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -758,9 +807,9 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(testutil.ChartWithFailingHook()),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[2])),
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
-					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					observeReleaseWithAction(releases[2], v2.ReleaseActionRollback),
+					observeReleaseWithAction(releases[1], v2.ReleaseActionUpgrade),
+					observeReleaseWithAction(releases[0], v2.ReleaseActionRollback),
 				}
 			},
 			wantErr: ErrExceededMaxRetries,
@@ -774,7 +823,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -800,11 +849,48 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			chart: testutil.BuildChart(testutil.ChartWithFailingHook()),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					observeReleaseWithAction(releases[1], v2.ReleaseActionUninstallRemediation),
 					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 				}
 			},
-			wantErr: ErrExceededMaxRetries,
+			wantErr: ErrMustRequeue,
+		},
+		{
+			name: "upgrade failure with retry",
+			releases: func(namespace string) []*helmrelease.Release {
+				return []*helmrelease.Release{
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Version:   1,
+						Chart:     testutil.BuildChart(),
+						Status:    helmreleasecommon.StatusDeployed,
+					}),
+				}
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.Upgrade = &v2.Upgrade{
+					Strategy: &v2.UpgradeStrategy{
+						Name:          "RetryOnFailure",
+						RetryInterval: &metav1.Duration{Duration: time.Minute},
+					},
+				}
+			},
+			status: func(namespace string, releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+				}
+			},
+			chart: testutil.BuildChart(testutil.ChartWithFailingHook()),
+			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
+				return v2.Snapshots{
+					observeReleaseWithAction(releases[1], v2.ReleaseActionUpgrade),
+					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+				}
+			},
+			wantErr: ErrRetryAfterInterval,
 		},
 		{
 			name: "upgrade test failure with remediation",
@@ -815,7 +901,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -838,16 +924,59 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			},
 			chart: testutil.BuildChart(testutil.ChartWithFailingTestHook()),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
-				testedSnap := release.ObservedToSnapshot(release.ObserveRelease(releases[1]))
+				testedSnap := observeReleaseWithAction(releases[1], v2.ReleaseActionRollback)
 				testedSnap.SetTestHooks(release.TestHooksFromRelease(releases[1]))
 
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[2])),
+					observeReleaseWithAction(releases[2], v2.ReleaseActionRollback),
 					testedSnap,
 					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 				}
 			},
 			wantErr: ErrExceededMaxRetries,
+		},
+		{
+			name: "upgrade test failure with retry",
+			releases: func(namespace string) []*helmrelease.Release {
+				return []*helmrelease.Release{
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Version:   1,
+						Chart:     testutil.BuildChart(),
+						Status:    helmreleasecommon.StatusDeployed,
+					}),
+				}
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.Upgrade = &v2.Upgrade{
+					Strategy: &v2.UpgradeStrategy{
+						Name:          "RetryOnFailure",
+						RetryInterval: &metav1.Duration{Duration: time.Minute},
+					},
+				}
+				spec.Test = &v2.Test{
+					Enable: true,
+				}
+			},
+			status: func(namespace string, releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+				}
+			},
+			chart: testutil.BuildChart(testutil.ChartWithFailingTestHook()),
+			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
+				testedSnap := observeReleaseWithAction(releases[1], v2.ReleaseActionUpgrade)
+				testedSnap.SetTestHooks(release.TestHooksFromRelease(releases[1]))
+
+				return v2.Snapshots{
+					testedSnap,
+					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+				}
+			},
+			wantErr: ErrRetryAfterInterval,
 		},
 		{
 			name: "upgrade test failure with test ignore",
@@ -858,7 +987,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -877,7 +1006,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			},
 			chart: testutil.BuildChart(testutil.ChartWithFailingTestHook()),
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
-				testedSnap := release.ObservedToSnapshot(release.ObserveRelease(releases[1]))
+				testedSnap := observeReleaseWithAction(releases[1], v2.ReleaseActionUpgrade)
 				testedSnap.SetTestHooks(release.TestHooksFromRelease(releases[1]))
 
 				return v2.Snapshots{
@@ -895,21 +1024,21 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   2,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   3,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -944,21 +1073,21 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   2,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   3,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusFailed,
+						Status:    helmreleasecommon.StatusFailed,
 					}),
 				}
 			},
@@ -983,6 +1112,55 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			},
 			chart:   testutil.BuildChart(),
 			wantErr: ErrExceededMaxRetries,
+		},
+		{
+			name: "upgrade retry does not result in exhausted retries",
+			releases: func(namespace string) []*helmrelease.Release {
+				return []*helmrelease.Release{
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Version:   1,
+						Chart:     testutil.BuildChart(),
+						Status:    helmreleasecommon.StatusSuperseded,
+					}),
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Version:   2,
+						Chart:     testutil.BuildChart(),
+						Status:    helmreleasecommon.StatusSuperseded,
+					}),
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Version:   3,
+						Chart:     testutil.BuildChart(),
+						Status:    helmreleasecommon.StatusFailed,
+					}),
+				}
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.Upgrade = &v2.Upgrade{
+					Strategy: &v2.UpgradeStrategy{
+						Name:          "RetryOnFailure",
+						RetryInterval: &metav1.Duration{Duration: time.Minute},
+					},
+				}
+			},
+			status: func(namespace string, releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[2])),
+						release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+					LastAttemptedReleaseAction: v2.ReleaseActionUpgrade,
+					Failures:                   2,
+					UpgradeFailures:            2,
+				}
+			},
+			chart: testutil.BuildChart(),
 		},
 	}
 	for _, tt := range tests {
@@ -1011,7 +1189,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 					ReleaseName:      mockReleaseName,
 					TargetNamespace:  releaseNamespace,
 					StorageNamespace: releaseNamespace,
-					Timeout:          &metav1.Duration{Duration: 100 * time.Millisecond},
+					Timeout:          &metav1.Duration{Duration: 200 * time.Millisecond},
 				},
 			}
 			if tt.spec != nil {
@@ -1052,7 +1230,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 				Values: tt.values,
 			}
 
-			err = NewAtomicRelease(patchHelper, cfg, recorder, testFieldManager).Reconcile(context.TODO(), req)
+			err = NewAtomicRelease(patchHelper, cfg, recorder, testFieldManager, nil, false).Reconcile(context.TODO(), req)
 			wantErr := BeNil()
 			if tt.wantErr != nil {
 				wantErr = MatchError(tt.wantErr)
@@ -1060,7 +1238,7 @@ func TestAtomicRelease_Reconcile_Scenarios(t *testing.T) {
 			g.Expect(err).To(wantErr)
 
 			if tt.expectHistory != nil {
-				history, _ := store.History(mockReleaseName)
+				history, _ := storeHistory(store, mockReleaseName)
 				releaseutil.SortByRevision(history)
 
 				g.Expect(req.Object.Status.History).To(testutil.Equal(tt.expectHistory(history)))
@@ -1074,7 +1252,7 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 		name              string
 		releases          func(namespace string) []*helmrelease.Release
 		spec              func(spec *v2.HelmReleaseSpec)
-		values            map[string]interface{}
+		values            map[string]any
 		status            func(releases []*helmrelease.Release) v2.HelmReleaseStatus
 		wantDigest        string
 		wantReleaseAction v2.ReleaseAction
@@ -1087,7 +1265,7 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 						Chart:     testutil.BuildChart(),
 					}, testutil.ReleaseWithConfig(nil)),
 				}
@@ -1120,7 +1298,7 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 						Chart:     testutil.BuildChart(),
 					}, testutil.ReleaseWithConfig(nil)),
 				}
@@ -1142,7 +1320,7 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 					},
 				}
 			},
-			values:            map[string]interface{}{"foo": "baz"},
+			values:            map[string]any{"foo": "baz"},
 			wantDigest:        postrender.Digest(digest.Canonical, postRenderers).String(),
 			wantReleaseAction: v2.ReleaseActionUpgrade,
 		},
@@ -1154,7 +1332,7 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 						Chart:     testutil.BuildChart(),
 					}, testutil.ReleaseWithConfig(nil)),
 				}
@@ -1188,7 +1366,7 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 						Chart:     testutil.BuildChart(),
 					}, testutil.ReleaseWithConfig(nil)),
 				}
@@ -1198,6 +1376,7 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 			},
 			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
 				return v2.HelmReleaseStatus{
+					ObservedGeneration: 2, // Matches obj.Generation to skip the digest check.
 					History: v2.Snapshots{
 						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 					},
@@ -1205,7 +1384,7 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 						{
 							Type:               meta.ReadyCondition,
 							Status:             metav1.ConditionTrue,
-							ObservedGeneration: 2, // This is used to set processed config generation.
+							ObservedGeneration: 2,
 						},
 					},
 					ObservedPostRenderersDigest: postrender.Digest(digest.Canonical, postRenderers).String(),
@@ -1241,7 +1420,7 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 					ReleaseName:      mockReleaseName,
 					TargetNamespace:  releaseNamespace,
 					StorageNamespace: releaseNamespace,
-					Timeout:          &metav1.Duration{Duration: 100 * time.Millisecond},
+					Timeout:          &metav1.Duration{Duration: 200 * time.Millisecond},
 				},
 			}
 
@@ -1283,11 +1462,14 @@ func TestAtomicRelease_Reconcile_PostRenderers_Scenarios(t *testing.T) {
 				Values: tt.values,
 			}
 
-			err = NewAtomicRelease(patchHelper, cfg, recorder, testFieldManager).Reconcile(context.TODO(), req)
+			err = NewAtomicRelease(patchHelper, cfg, recorder, testFieldManager, nil, false).Reconcile(context.TODO(), req)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(obj.Status.ObservedPostRenderersDigest).To(Equal(tt.wantDigest))
 			g.Expect(obj.Status.LastAttemptedReleaseAction).To(Equal(tt.wantReleaseAction))
+			if tt.wantReleaseAction != "" {
+				g.Expect(obj.Status.LastAttemptedReleaseActionDuration).ToNot(BeNil())
+			}
 		})
 	}
 }
@@ -1322,7 +1504,7 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 			state: ReleaseState{Status: ReleaseStatusInSync},
 			annotations: map[string]string{
 				meta.ReconcileRequestAnnotation: "force",
-				v2.ForceRequestAnnotation:       "force",
+				meta.ForceRequestAnnotation:     "force",
 			},
 			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
 				return v2.HelmReleaseStatus{
@@ -1353,6 +1535,46 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 			},
 		},
 		{
+			name: "in-sync release with stale ready condition",
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						{Version: 1},
+					},
+					Conditions: []metav1.Condition{
+						*conditions.FalseCondition(v2.ReleasedCondition, v2.UpgradeFailedReason, "upgrade failed"),
+						*conditions.FalseCondition(meta.ReadyCondition, v2.UpgradeFailedReason, "upgrade failed"),
+					},
+				}
+			},
+			state: ReleaseState{Status: ReleaseStatusInSync},
+			want:  nil,
+			assertConditions: []metav1.Condition{
+				*conditions.TrueCondition(v2.ReleasedCondition, v2.UpgradeSucceededReason, "upgrade succeeded"),
+				*conditions.TrueCondition(meta.ReadyCondition, v2.UpgradeSucceededReason, "upgrade succeeded"),
+			},
+		},
+		{
+			name: "in-sync release with stale install failed condition",
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						{Version: 1},
+					},
+					Conditions: []metav1.Condition{
+						*conditions.FalseCondition(v2.ReleasedCondition, v2.InstallFailedReason, "install failed"),
+						*conditions.FalseCondition(meta.ReadyCondition, v2.InstallFailedReason, "install failed"),
+					},
+				}
+			},
+			state: ReleaseState{Status: ReleaseStatusInSync},
+			want:  nil,
+			assertConditions: []metav1.Condition{
+				*conditions.TrueCondition(v2.ReleasedCondition, v2.InstallSucceededReason, "install succeeded"),
+				*conditions.TrueCondition(meta.ReadyCondition, v2.InstallSucceededReason, "install succeeded"),
+			},
+		},
+		{
 			name:  "locked release triggers unlock action",
 			state: ReleaseState{Status: ReleaseStatusLocked},
 			want:  &Unlock{},
@@ -1366,7 +1588,7 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 			name: "absent release without remaining retries and force annotation triggers install",
 			annotations: map[string]string{
 				meta.ReconcileRequestAnnotation: "force",
-				v2.ForceRequestAnnotation:       "force",
+				meta.ForceRequestAnnotation:     "force",
 			},
 			state: ReleaseState{Status: ReleaseStatusAbsent},
 			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
@@ -1397,10 +1619,10 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 				{
 					Type: jsondiff.DiffTypeCreate,
 					DesiredObject: &unstructured.Unstructured{
-						Object: map[string]interface{}{
+						Object: map[string]any{
 							"apiVersion": "apps/v1",
 							"kind":       "Deployment",
-							"metadata": map[string]interface{}{
+							"metadata": map[string]any{
 								"name":      "mock",
 								"namespace": "something",
 							},
@@ -1457,27 +1679,27 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 				{
 					Type: jsondiff.DiffTypeUpdate,
 					DesiredObject: &unstructured.Unstructured{
-						Object: map[string]interface{}{
+						Object: map[string]any{
 							"apiVersion": "apps/v1",
 							"kind":       "Deployment",
-							"metadata": map[string]interface{}{
+							"metadata": map[string]any{
 								"name":      "mock",
 								"namespace": "something",
 							},
-							"spec": map[string]interface{}{
+							"spec": map[string]any{
 								"replicas": 2,
 							},
 						},
 					},
 					ClusterObject: &unstructured.Unstructured{
-						Object: map[string]interface{}{
+						Object: map[string]any{
 							"apiVersion": "apps/v1",
 							"kind":       "Deployment",
-							"metadata": map[string]interface{}{
+							"metadata": map[string]any{
 								"name":      "mock",
 								"namespace": "something",
 							},
-							"spec": map[string]interface{}{
+							"spec": map[string]any{
 								"replicas": 1,
 							},
 						},
@@ -1518,7 +1740,7 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 			},
 			annotations: map[string]string{
 				meta.ReconcileRequestAnnotation: "force",
-				v2.ForceRequestAnnotation:       "force",
+				meta.ForceRequestAnnotation:     "force",
 			},
 			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
 				return v2.HelmReleaseStatus{
@@ -1590,7 +1812,7 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 			state: ReleaseState{Status: ReleaseStatusFailed},
 			annotations: map[string]string{
 				meta.ReconcileRequestAnnotation: "force",
-				v2.ForceRequestAnnotation:       "force",
+				meta.ForceRequestAnnotation:     "force",
 			},
 			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
 				return v2.HelmReleaseStatus{
@@ -1630,6 +1852,24 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 			want: &UninstallRemediation{},
 		},
 		{
+			name:  "failed release with active install retry triggers upgrade",
+			state: ReleaseState{Status: ReleaseStatusFailed},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.Install = &v2.Install{
+					Strategy: &v2.InstallStrategy{
+						Name: "RetryOnFailure",
+					},
+				}
+			},
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					LastAttemptedReleaseAction: v2.ReleaseActionInstall,
+					InstallFailures:            2,
+				}
+			},
+			want: &Upgrade{},
+		},
+		{
 			name:  "failed release with active upgrade remediation triggers rollback",
 			state: ReleaseState{Status: ReleaseStatusFailed},
 			releases: []*helmrelease.Release{
@@ -1637,14 +1877,14 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 					Name:      mockReleaseName,
 					Namespace: mockReleaseNamespace,
 					Version:   1,
-					Status:    helmrelease.StatusSuperseded,
+					Status:    helmreleasecommon.StatusSuperseded,
 					Chart:     testutil.BuildChart(),
 				}),
 				testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 					Name:      mockReleaseName,
 					Namespace: mockReleaseNamespace,
 					Version:   2,
-					Status:    helmrelease.StatusFailed,
+					Status:    helmreleasecommon.StatusFailed,
 					Chart:     testutil.BuildChart(),
 				}),
 			},
@@ -1668,6 +1908,44 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 			want: &RollbackRemediation{},
 		},
 		{
+			name:  "failed release with active upgrade retry triggers upgrade",
+			state: ReleaseState{Status: ReleaseStatusFailed},
+			releases: []*helmrelease.Release{
+				testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+					Name:      mockReleaseName,
+					Namespace: mockReleaseNamespace,
+					Version:   1,
+					Status:    helmreleasecommon.StatusSuperseded,
+					Chart:     testutil.BuildChart(),
+				}),
+				testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+					Name:      mockReleaseName,
+					Namespace: mockReleaseNamespace,
+					Version:   2,
+					Status:    helmreleasecommon.StatusFailed,
+					Chart:     testutil.BuildChart(),
+				}),
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.Upgrade = &v2.Upgrade{
+					Strategy: &v2.UpgradeStrategy{
+						Name: "RetryOnFailure",
+					},
+				}
+			},
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+					LastAttemptedReleaseAction: v2.ReleaseActionUpgrade,
+					UpgradeFailures:            1,
+				}
+			},
+			want: &Upgrade{},
+		},
+		{
 			name:  "failed release with active upgrade remediation and no previous release triggers error",
 			state: ReleaseState{Status: ReleaseStatusFailed},
 			releases: []*helmrelease.Release{
@@ -1675,7 +1953,7 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 					Name:      mockReleaseName,
 					Namespace: mockReleaseNamespace,
 					Version:   2,
-					Status:    helmrelease.StatusFailed,
+					Status:    helmreleasecommon.StatusFailed,
 					Chart:     testutil.BuildChart(),
 				}),
 			},
@@ -1705,7 +1983,7 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 					Name:      mockReleaseName,
 					Namespace: mockReleaseNamespace,
 					Version:   2,
-					Status:    helmrelease.StatusFailed,
+					Status:    helmreleasecommon.StatusFailed,
 					Chart:     testutil.BuildChart(),
 				}),
 			},
@@ -1725,7 +2003,7 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 								Name:      mockReleaseName,
 								Namespace: mockReleaseNamespace,
 								Version:   1,
-								Status:    helmrelease.StatusSuperseded,
+								Status:    helmreleasecommon.StatusSuperseded,
 								Chart:     testutil.BuildChart(),
 							}),
 						)),
@@ -1746,7 +2024,7 @@ func TestAtomicRelease_actionForState(t *testing.T) {
 					Name:      mockReleaseName,
 					Namespace: mockReleaseNamespace,
 					Version:   1,
-					Status:    helmrelease.StatusSuperseded,
+					Status:    helmreleasecommon.StatusSuperseded,
 					Chart:     testutil.BuildChart(),
 				}),
 			},
@@ -1947,6 +2225,233 @@ func Test_replaceCondition(t *testing.T) {
 			obj.Status.Conditions = tt.conditions
 			replaceCondition(obj, tt.target, tt.replacement, v2.UpgradeSucceededReason, "foo", metav1.ConditionTrue)
 			g.Expect(obj.Status.Conditions).To(Equal(tt.wantConditions))
+		})
+	}
+}
+
+func TestAtomicRelease_Reconcile_CommonMetadata_Scenarios(t *testing.T) {
+	tests := []struct {
+		name              string
+		releases          func(namespace string) []*helmrelease.Release
+		spec              func(spec *v2.HelmReleaseSpec)
+		values            map[string]any
+		status            func(releases []*helmrelease.Release) v2.HelmReleaseStatus
+		wantDigest        string
+		wantReleaseAction v2.ReleaseAction
+	}{
+		{
+			name: "addition of common metadata",
+			releases: func(namespace string) []*helmrelease.Release {
+				return []*helmrelease.Release{
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Version:   1,
+						Status:    helmreleasecommon.StatusDeployed,
+						Chart:     testutil.BuildChart(),
+					}, testutil.ReleaseWithConfig(nil)),
+				}
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.CommonMetadata = commonMetadata
+			},
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:               meta.ReadyCondition,
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: 1,
+						},
+					},
+				}
+			},
+			wantDigest:        postrender.CommonMetadataDigest(digest.Canonical, commonMetadata).String(),
+			wantReleaseAction: v2.ReleaseActionUpgrade,
+		},
+		{
+			name: "config change and addition of common metadata",
+			releases: func(namespace string) []*helmrelease.Release {
+				return []*helmrelease.Release{
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Version:   1,
+						Status:    helmreleasecommon.StatusDeployed,
+						Chart:     testutil.BuildChart(),
+					}, testutil.ReleaseWithConfig(nil)),
+				}
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.CommonMetadata = commonMetadata
+			},
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:               meta.ReadyCondition,
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: 1,
+						},
+					},
+				}
+			},
+			values:            map[string]any{"foo": "baz"},
+			wantDigest:        postrender.CommonMetadataDigest(digest.Canonical, commonMetadata).String(),
+			wantReleaseAction: v2.ReleaseActionUpgrade,
+		},
+		{
+			name: "existing and new common metadata value",
+			releases: func(namespace string) []*helmrelease.Release {
+				return []*helmrelease.Release{
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Version:   1,
+						Status:    helmreleasecommon.StatusDeployed,
+						Chart:     testutil.BuildChart(),
+					}, testutil.ReleaseWithConfig(nil)),
+				}
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.CommonMetadata = commonMetadata2
+			},
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:               meta.ReadyCondition,
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: 1,
+						},
+					},
+					ObservedCommonMetadataDigest: postrender.CommonMetadataDigest(digest.Canonical, commonMetadata).String(),
+				}
+			},
+			wantDigest:        postrender.CommonMetadataDigest(digest.Canonical, commonMetadata2).String(),
+			wantReleaseAction: v2.ReleaseActionUpgrade,
+		},
+		{
+			name: "common metadata mismatch remains in sync for processed config",
+			releases: func(namespace string) []*helmrelease.Release {
+				return []*helmrelease.Release{
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Version:   1,
+						Status:    helmreleasecommon.StatusDeployed,
+						Chart:     testutil.BuildChart(),
+					}, testutil.ReleaseWithConfig(nil)),
+				}
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.CommonMetadata = commonMetadata2
+			},
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					ObservedGeneration: 2, // Matches obj.Generation to skip the digest check.
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:               meta.ReadyCondition,
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: 2,
+						},
+					},
+					ObservedPostRenderersDigest: postrender.CommonMetadataDigest(digest.Canonical, commonMetadata).String(),
+				}
+			},
+			wantDigest:        postrender.CommonMetadataDigest(digest.Canonical, commonMetadata2).String(),
+			wantReleaseAction: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			namedNS, err := testEnv.CreateNamespace(context.TODO(), mockReleaseNamespace)
+			g.Expect(err).NotTo(HaveOccurred())
+			t.Cleanup(func() {
+				_ = testEnv.Delete(context.TODO(), namedNS)
+			})
+			releaseNamespace := namedNS.Name
+
+			releases := tt.releases(releaseNamespace)
+
+			obj := &v2.HelmRelease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mockReleaseName,
+					Namespace: releaseNamespace,
+					// Set a higher generation value to allow setting
+					// observations in previous generations.
+					Generation: 2,
+				},
+				Spec: v2.HelmReleaseSpec{
+					ReleaseName:      mockReleaseName,
+					TargetNamespace:  releaseNamespace,
+					StorageNamespace: releaseNamespace,
+					Timeout:          &metav1.Duration{Duration: 200 * time.Millisecond},
+				},
+			}
+
+			if tt.spec != nil {
+				tt.spec(&obj.Spec)
+			}
+			if tt.status != nil {
+				obj.Status = tt.status(releases)
+			}
+
+			getter, err := RESTClientGetterFromManager(testEnv.Manager, obj.GetReleaseNamespace())
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := action.NewConfigFactory(getter,
+				action.WithStorage(action.DefaultStorageDriver, obj.GetStorageNamespace()),
+			)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			store := helmstorage.Init(cfg.Driver)
+			for _, r := range releases {
+				g.Expect(store.Create(r)).To(Succeed())
+			}
+
+			// We use a fake client here to allow us to work with a minimal release
+			// object mock. As the fake client does not perform any validation.
+			// However, for the Helm storage driver to work, we need a real client
+			// which is therefore initialized separately above.
+			client := fake.NewClientBuilder().
+				WithScheme(testEnv.Scheme()).
+				WithObjects(obj).
+				WithStatusSubresource(&v2.HelmRelease{}).
+				Build()
+			patchHelper := patch.NewSerialPatcher(obj, client)
+			recorder := new(record.FakeRecorder)
+
+			req := &Request{
+				Object: obj,
+				Chart:  testutil.BuildChart(),
+				Values: tt.values,
+			}
+
+			err = NewAtomicRelease(patchHelper, cfg, recorder, testFieldManager, nil, false).Reconcile(context.TODO(), req)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(obj.Status.ObservedCommonMetadataDigest).To(Equal(tt.wantDigest))
+			g.Expect(obj.Status.LastAttemptedReleaseAction).To(Equal(tt.wantReleaseAction))
+			if tt.wantReleaseAction != "" {
+				g.Expect(obj.Status.LastAttemptedReleaseActionDuration).ToNot(BeNil())
+			}
 		})
 	}
 }

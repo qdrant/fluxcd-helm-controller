@@ -24,10 +24,11 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	helmrelease "helm.sh/helm/v3/pkg/release"
-	helmreleaseutil "helm.sh/helm/v3/pkg/releaseutil"
-	helmstorage "helm.sh/helm/v3/pkg/storage"
-	helmdriver "helm.sh/helm/v3/pkg/storage/driver"
+	helmreleasecommon "helm.sh/helm/v4/pkg/release/common"
+	helmrelease "helm.sh/helm/v4/pkg/release/v1"
+	helmreleaseutil "helm.sh/helm/v4/pkg/release/v1/util"
+	helmstorage "helm.sh/helm/v4/pkg/storage"
+	helmdriver "helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
@@ -36,9 +37,10 @@ import (
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/conditions"
 
+	"github.com/fluxcd/pkg/chartutil"
+
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
-	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
 	"github.com/fluxcd/helm-controller/internal/release"
 	"github.com/fluxcd/helm-controller/internal/storage"
@@ -88,7 +90,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusPendingInstall,
+						Status:    helmreleasecommon.StatusPendingInstall,
 					}),
 				}
 			},
@@ -124,7 +126,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusPendingRollback,
+						Status:    helmreleasecommon.StatusPendingRollback,
 					}),
 				}
 			},
@@ -156,7 +158,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusFailed,
+						Status:    helmreleasecommon.StatusFailed,
 					}),
 				}
 			},
@@ -167,7 +169,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 							Name:      mockReleaseName,
 							Namespace: releases[0].Namespace,
 							Version:   1,
-							Status:    helmrelease.StatusFailed.String(),
+							Status:    helmreleasecommon.StatusFailed.String(),
 						},
 					},
 				}
@@ -179,7 +181,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: releases[0].Namespace,
 						Version:   1,
-						Status:    helmrelease.StatusFailed.String(),
+						Status:    helmreleasecommon.StatusFailed.String(),
 					},
 				}
 			},
@@ -193,7 +195,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Version:   2,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -204,7 +206,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 							Name:      mockReleaseName,
 							Namespace: releases[0].Namespace,
 							Version:   releases[0].Version - 1,
-							Status:    helmrelease.StatusPendingInstall.String(),
+							Status:    helmreleasecommon.StatusPendingInstall.String(),
 						},
 					},
 				}
@@ -215,7 +217,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: releases[0].Namespace,
 						Version:   releases[0].Version - 1,
-						Status:    helmrelease.StatusPendingInstall.String(),
+						Status:    helmreleasecommon.StatusPendingInstall.String(),
 					},
 				}
 			},
@@ -228,7 +230,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 						&v2.Snapshot{
 							Name:    mockReleaseName,
 							Version: 1,
-							Status:  helmrelease.StatusFailed.String(),
+							Status:  helmreleasecommon.StatusFailed.String(),
 						},
 					},
 				}
@@ -239,7 +241,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 					&v2.Snapshot{
 						Name:    mockReleaseName,
 						Version: 1,
-						Status:  helmrelease.StatusFailed.String(),
+						Status:  helmreleasecommon.StatusFailed.String(),
 					},
 				}
 			},
@@ -259,7 +261,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Version:   1,
 						Chart:     testutil.BuildChart(),
-						Status:    helmrelease.StatusPendingInstall,
+						Status:    helmreleasecommon.StatusPendingInstall,
 					}),
 				}
 			},
@@ -269,7 +271,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 						&v2.Snapshot{
 							Name:    mockReleaseName,
 							Version: 1,
-							Status:  helmrelease.StatusFailed.String(),
+							Status:  helmreleasecommon.StatusFailed.String(),
 						},
 					},
 				}
@@ -281,7 +283,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 					&v2.Snapshot{
 						Name:    mockReleaseName,
 						Version: 1,
-						Status:  helmrelease.StatusFailed.String(),
+						Status:  helmreleasecommon.StatusFailed.String(),
 					},
 				}
 			},
@@ -348,7 +350,7 @@ func TestUnlock_Reconcile(t *testing.T) {
 
 			g.Expect(obj.Status.Conditions).To(conditions.MatchConditions(tt.expectConditions))
 
-			releases, _ = store.History(mockReleaseName)
+			releases, _ = storeHistory(store, mockReleaseName)
 			helmreleaseutil.SortByRevision(releases)
 
 			if tt.expectHistory != nil {
@@ -375,7 +377,7 @@ func TestUnlock_failure(t *testing.T) {
 			Version:   4,
 		})
 		obj    = &v2.HelmRelease{}
-		status = helmrelease.StatusPendingInstall
+		status = helmreleasecommon.StatusPendingInstall
 		err    = fmt.Errorf("unlock error")
 	)
 
@@ -393,7 +395,7 @@ func TestUnlock_failure(t *testing.T) {
 		status, err.Error())
 
 	g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-		*conditions.FalseCondition(v2.ReleasedCondition, "PendingRelease", expectMsg),
+		*conditions.FalseCondition(v2.ReleasedCondition, "PendingRelease", "%s", expectMsg),
 	}))
 	g.Expect(req.Object.Status.Failures).To(Equal(int64(1)))
 	g.Expect(recorder.GetEvents()).To(ConsistOf([]corev1.Event{
@@ -423,7 +425,7 @@ func TestUnlock_success(t *testing.T) {
 			Version:   4,
 		})
 		obj    = &v2.HelmRelease{}
-		status = helmrelease.StatusPendingInstall
+		status = helmreleasecommon.StatusPendingInstall
 	)
 
 	recorder := testutil.NewFakeRecorder(10, false)
@@ -440,7 +442,7 @@ func TestUnlock_success(t *testing.T) {
 		status)
 
 	g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-		*conditions.FalseCondition(v2.ReleasedCondition, "PendingRelease", expectMsg),
+		*conditions.FalseCondition(v2.ReleasedCondition, "PendingRelease", "%s", expectMsg),
 	}))
 	g.Expect(req.Object.Status.Failures).To(Equal(int64(0)))
 	g.Expect(recorder.GetEvents()).To(ConsistOf([]corev1.Event{
@@ -474,7 +476,7 @@ func TestUnlock_withOCIDigest(t *testing.T) {
 		Namespace: releaseNamespace,
 		Chart:     testutil.BuildChart(),
 		Version:   4,
-		Status:    helmrelease.StatusPendingInstall,
+		Status:    helmreleasecommon.StatusPendingInstall,
 	})
 
 	obs := release.ObserveRelease(rls)
@@ -519,7 +521,7 @@ func TestUnlock_withOCIDigest(t *testing.T) {
 			*conditions.FalseCondition(v2.ReleasedCondition, "PendingRelease", "Unlocked Helm release"),
 		}))
 
-	releases, _ := store.History(mockReleaseName)
+	releases, _ := storeHistory(store, mockReleaseName)
 	helmreleaseutil.SortByRevision(releases)
 	expected := release.ObserveRelease(releases[0])
 	expected.OCIDigest = "sha256:fcdc2b0de1581a3633ada4afee3f918f6eaa5b5ab38c3fef03d5b48d3f85d9f6"
@@ -560,7 +562,7 @@ func Test_observeUnlock(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: mockReleaseNamespace,
 						Version:   1,
-						Status:    helmrelease.StatusPendingRollback.String(),
+						Status:    helmreleasecommon.StatusPendingRollback.String(),
 					},
 				},
 			},
@@ -569,7 +571,7 @@ func Test_observeUnlock(t *testing.T) {
 			Name:      mockReleaseName,
 			Namespace: mockReleaseNamespace,
 			Version:   1,
-			Status:    helmrelease.StatusFailed,
+			Status:    helmreleasecommon.StatusFailed,
 		})
 		expect := release.ObservedToSnapshot(release.ObserveRelease(rls))
 		observeUnlock(obj)(rls)
@@ -589,7 +591,7 @@ func Test_observeUnlock(t *testing.T) {
 						Name:      mockReleaseName,
 						Namespace: mockReleaseNamespace,
 						Version:   1,
-						Status:    helmrelease.StatusPendingRollback.String(),
+						Status:    helmreleasecommon.StatusPendingRollback.String(),
 						OCIDigest: "sha256:fcdc2b0de1581a3633ada4afee3f918f6eaa5b5ab38c3fef03d5b48d3f85d9f6",
 					},
 				},
@@ -599,7 +601,7 @@ func Test_observeUnlock(t *testing.T) {
 			Name:      mockReleaseName,
 			Namespace: mockReleaseNamespace,
 			Version:   1,
-			Status:    helmrelease.StatusFailed,
+			Status:    helmreleasecommon.StatusFailed,
 		})
 		obs := release.ObserveRelease(rls)
 		obs.OCIDigest = "sha256:fcdc2b0de1581a3633ada4afee3f918f6eaa5b5ab38c3fef03d5b48d3f85d9f6"
@@ -611,6 +613,33 @@ func Test_observeUnlock(t *testing.T) {
 		}))
 	})
 
+	t.Run("unlock preserves action", func(t *testing.T) {
+		g := NewWithT(t)
+
+		obj := &v2.HelmRelease{
+			Status: v2.HelmReleaseStatus{
+				History: v2.Snapshots{
+					{
+						Name:      mockReleaseName,
+						Namespace: mockReleaseNamespace,
+						Version:   1,
+						Status:    helmreleasecommon.StatusPendingRollback.String(),
+						Action:    v2.ReleaseActionUpgrade,
+					},
+				},
+			},
+		}
+		rls := helmrelease.Mock(&helmrelease.MockReleaseOptions{
+			Name:      mockReleaseName,
+			Namespace: mockReleaseNamespace,
+			Version:   1,
+			Status:    helmreleasecommon.StatusFailed,
+		})
+		observeUnlock(obj)(rls)
+
+		g.Expect(obj.Status.History.Latest().Action).To(Equal(v2.ReleaseActionUpgrade))
+	})
+
 	t.Run("unlock without current", func(t *testing.T) {
 		g := NewWithT(t)
 
@@ -619,7 +648,7 @@ func Test_observeUnlock(t *testing.T) {
 			Name:      mockReleaseName,
 			Namespace: mockReleaseNamespace,
 			Version:   1,
-			Status:    helmrelease.StatusFailed,
+			Status:    helmreleasecommon.StatusFailed,
 		})
 		observeUnlock(obj)(rls)
 

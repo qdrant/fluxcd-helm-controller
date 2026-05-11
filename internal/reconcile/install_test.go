@@ -24,23 +24,26 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	"helm.sh/helm/v3/pkg/chart"
-	helmchartutil "helm.sh/helm/v3/pkg/chartutil"
-	helmrelease "helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/releaseutil"
-	helmstorage "helm.sh/helm/v3/pkg/storage"
-	helmdriver "helm.sh/helm/v3/pkg/storage/driver"
+	helmchartutil "helm.sh/helm/v4/pkg/chart/common"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	helmreleasecommon "helm.sh/helm/v4/pkg/release/common"
+	helmrelease "helm.sh/helm/v4/pkg/release/v1"
+	releaseutil "helm.sh/helm/v4/pkg/release/v1/util"
+	helmstorage "helm.sh/helm/v4/pkg/storage"
+	helmdriver "helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	eventv1 "github.com/fluxcd/pkg/apis/event/v1beta1"
 	"github.com/fluxcd/pkg/apis/meta"
+	"github.com/fluxcd/pkg/chartutil"
 	"github.com/fluxcd/pkg/runtime/conditions"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
-	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
 	"github.com/fluxcd/helm-controller/internal/release"
 	"github.com/fluxcd/helm-controller/internal/storage"
@@ -71,6 +74,9 @@ func TestInstall_Reconcile(t *testing.T) {
 		// expectHistory is the expected History of the HelmRelease after
 		// install.
 		expectHistory func(releases []*helmrelease.Release) v2.Snapshots
+		// expectInventory is the expected Inventory of the HelmRelease after
+		// install.
+		expectInventory func(namespace string) *v2.ResourceInventory
 		// expectFailures is the expected Failures count of the HelmRelease.
 		expectFailures int64
 		// expectInstallFailures is the expected InstallFailures count of the
@@ -79,6 +85,9 @@ func TestInstall_Reconcile(t *testing.T) {
 		// expectUpgradeFailures is the expected UpgradeFailures count of the
 		// HelmRelease.
 		expectUpgradeFailures int64
+		// statusReader is an optional StatusReader to configure on the
+		// ConfigFactory.
+		statusReader bool
 	}{
 		{
 			name:  "install success",
@@ -91,7 +100,21 @@ func TestInstall_Reconcile(t *testing.T) {
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[0])
+						obs.Action = v2.ReleaseActionInstall
+						return release.ObservedToSnapshot(obs)
+					}(),
+				}
+			},
+			expectInventory: func(namespace string) *v2.ResourceInventory {
+				return &v2.ResourceInventory{
+					Entries: []v2.ResourceRef{
+						{
+							ID:      namespace + "_cm__ConfigMap",
+							Version: "v1",
+						},
+					},
 				}
 			},
 		},
@@ -106,7 +129,11 @@ func TestInstall_Reconcile(t *testing.T) {
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[0])
+						obs.Action = v2.ReleaseActionInstall
+						return release.ObservedToSnapshot(obs)
+					}(),
 				}
 			},
 			expectFailures:        1,
@@ -140,7 +167,7 @@ func TestInstall_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Chart:     testutil.BuildChart(),
 						Version:   1,
-						Status:    helmrelease.StatusUninstalled,
+						Status:    helmreleasecommon.StatusUninstalled,
 					}),
 				}
 			},
@@ -165,7 +192,11 @@ func TestInstall_Reconcile(t *testing.T) {
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[1])
+						obs.Action = v2.ReleaseActionInstall
+						return release.ObservedToSnapshot(obs)
+					}(),
 				}
 			},
 		},
@@ -178,7 +209,7 @@ func TestInstall_Reconcile(t *testing.T) {
 							Name:      mockReleaseName,
 							Namespace: "other",
 							Version:   1,
-							Status:    helmrelease.StatusUninstalled,
+							Status:    helmreleasecommon.StatusUninstalled,
 							Chart:     testutil.BuildChart(),
 						}))),
 					},
@@ -193,7 +224,11 @@ func TestInstall_Reconcile(t *testing.T) {
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[0])
+						obs.Action = v2.ReleaseActionInstall
+						return release.ObservedToSnapshot(obs)
+					}(),
 				}
 			},
 		},
@@ -216,7 +251,41 @@ func TestInstall_Reconcile(t *testing.T) {
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[0])
+						obs.Action = v2.ReleaseActionInstall
+						return release.ObservedToSnapshot(obs)
+					}(),
+				}
+			},
+		},
+		{
+			name:         "install success with status reader",
+			chart:        testutil.BuildChart(),
+			statusReader: true,
+			expectConditions: []metav1.Condition{
+				*conditions.TrueCondition(meta.ReadyCondition, v2.InstallSucceededReason,
+					"Helm install succeeded"),
+				*conditions.TrueCondition(v2.ReleasedCondition, v2.InstallSucceededReason,
+					"Helm install succeeded"),
+			},
+			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
+				return v2.Snapshots{
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[0])
+						obs.Action = v2.ReleaseActionInstall
+						return release.ObservedToSnapshot(obs)
+					}(),
+				}
+			},
+			expectInventory: func(namespace string) *v2.ResourceInventory {
+				return &v2.ResourceInventory{
+					Entries: []v2.ResourceRef{
+						{
+							ID:      namespace + "_cm__ConfigMap",
+							Version: "v1",
+						},
+					},
 				}
 			},
 		},
@@ -243,7 +312,7 @@ func TestInstall_Reconcile(t *testing.T) {
 					ReleaseName:      mockReleaseName,
 					TargetNamespace:  releaseNamespace,
 					StorageNamespace: releaseNamespace,
-					Timeout:          &metav1.Duration{Duration: 100 * time.Millisecond},
+					Timeout:          &metav1.Duration{Duration: 200 * time.Millisecond},
 				},
 			}
 			if tt.spec != nil {
@@ -256,9 +325,15 @@ func TestInstall_Reconcile(t *testing.T) {
 			getter, err := RESTClientGetterFromManager(testEnv.Manager, obj.GetReleaseNamespace())
 			g.Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := action.NewConfigFactory(getter,
+			cfgOpts := []action.ConfigFactoryOption{
 				action.WithStorage(action.DefaultStorageDriver, obj.GetStorageNamespace()),
-			)
+			}
+			var mockSR *testutil.MockStatusReader
+			if tt.statusReader {
+				mockSR = &testutil.MockStatusReader{}
+				cfgOpts = append(cfgOpts, action.WithResourceManager(mockSR.NewResourceManagerFuncWithClient(testEnv.Client, testEnv.Manager.GetRESTMapper())))
+			}
+			cfg, err := action.NewConfigFactory(getter, cfgOpts...)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			store := helmstorage.Init(cfg.Driver)
@@ -271,7 +346,7 @@ func TestInstall_Reconcile(t *testing.T) {
 			}
 
 			recorder := new(record.FakeRecorder)
-			got := (NewInstall(cfg, recorder)).Reconcile(context.TODO(), &Request{
+			got := (NewInstall(cfg, recorder, false)).Reconcile(context.TODO(), &Request{
 				Object: obj,
 				Chart:  tt.chart,
 				Values: tt.values,
@@ -284,7 +359,7 @@ func TestInstall_Reconcile(t *testing.T) {
 
 			g.Expect(obj.Status.Conditions).To(conditions.MatchConditions(tt.expectConditions))
 
-			releases, _ = store.History(mockReleaseName)
+			releases, _ = storeHistory(store, mockReleaseName)
 			releaseutil.SortByRevision(releases)
 
 			if tt.expectHistory != nil {
@@ -296,6 +371,156 @@ func TestInstall_Reconcile(t *testing.T) {
 			g.Expect(obj.Status.Failures).To(Equal(tt.expectFailures))
 			g.Expect(obj.Status.InstallFailures).To(Equal(tt.expectInstallFailures))
 			g.Expect(obj.Status.UpgradeFailures).To(Equal(tt.expectUpgradeFailures))
+			g.Expect(obj.Status.LastAttemptedReleaseAction).To(Equal(v2.ReleaseActionInstall))
+			g.Expect(obj.Status.LastAttemptedReleaseActionDuration).ToNot(BeNil())
+
+			if tt.expectInventory != nil {
+				g.Expect(obj.Status.Inventory).To(testutil.Equal(tt.expectInventory(releaseNamespace)))
+			}
+
+			if mockSR != nil {
+				g.Expect(mockSR.SupportsCalled()).To(BeNumerically(">", 0), "expected StatusReader.Supports to be called")
+			}
+		})
+	}
+}
+
+func TestInstall_Reconcile_withSubchartWithCRDs(t *testing.T) {
+	getValues := func(subchartValues map[string]any) helmchartutil.Values {
+		return helmchartutil.Values{"subchart": subchartValues}
+	}
+
+	expectConditions := []metav1.Condition{
+		*conditions.TrueCondition(meta.ReadyCondition, v2.InstallSucceededReason,
+			"Helm install succeeded"),
+		*conditions.TrueCondition(v2.ReleasedCondition, v2.InstallSucceededReason,
+			"Helm install succeeded"),
+	}
+
+	expectHistory := func(releases []*helmrelease.Release) v2.Snapshots {
+		obs := release.ObserveRelease(releases[0])
+		obs.Action = v2.ReleaseActionInstall
+		return v2.Snapshots{
+			release.ObservedToSnapshot(obs),
+		}
+	}
+
+	for _, tt := range []struct {
+		name                     string
+		subchartValues           map[string]any
+		subchartResourcesPresent bool
+		expectedMainChartValues  map[string]any
+	}{
+		{
+			name:                     "subchart disabled should not deploy resources, including CRDs",
+			subchartValues:           map[string]any{"enabled": false},
+			subchartResourcesPresent: false,
+			expectedMainChartValues: map[string]any{
+				"foo":       "baz",
+				"myimports": map[string]any{"myint": 0},
+			},
+		},
+		{
+			name:                     "subchart enabled should deploy resources, including CRDs",
+			subchartValues:           map[string]any{"enabled": true},
+			subchartResourcesPresent: true,
+			expectedMainChartValues: map[string]any{
+				"foo":       "baz",
+				"myint":     123,
+				"myimports": map[string]any{"myint": 0}, // should be 456: https://github.com/helm/helm/issues/13223
+				"subchart": map[string]any{
+					"foo":     "bar",
+					"global":  map[string]any{},
+					"exports": map[string]any{"data": map[string]any{"myint": 123}},
+					"default": map[string]any{"data": map[string]any{"myint": 456}},
+				},
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			namedNS, err := testEnv.CreateNamespace(context.TODO(), mockReleaseNamespace)
+			g.Expect(err).NotTo(HaveOccurred())
+			t.Cleanup(func() {
+				_ = testEnv.Delete(context.TODO(), namedNS)
+			})
+			releaseNamespace := namedNS.Name
+
+			obj := &v2.HelmRelease{
+				Spec: v2.HelmReleaseSpec{
+					ReleaseName:      mockReleaseName,
+					TargetNamespace:  releaseNamespace,
+					StorageNamespace: releaseNamespace,
+					Timeout:          &metav1.Duration{Duration: 100 * time.Millisecond},
+				},
+			}
+
+			getter, err := RESTClientGetterFromManager(testEnv.Manager, obj.GetReleaseNamespace())
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := action.NewConfigFactory(getter,
+				action.WithStorage(action.DefaultStorageDriver, obj.GetStorageNamespace()),
+			)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			store := helmstorage.Init(cfg.Driver)
+
+			chart := testutil.BuildChartWithSubchartWithCRD()
+			recorder := new(record.FakeRecorder)
+			got := (NewInstall(cfg, recorder, false)).Reconcile(context.TODO(), &Request{
+				Object: obj,
+				Chart:  chart,
+				Values: getValues(tt.subchartValues),
+			})
+			g.Expect(got).ToNot(HaveOccurred())
+
+			g.Expect(obj.Status.Conditions).To(conditions.MatchConditions(expectConditions))
+
+			releases, _ := storeHistory(store, mockReleaseName)
+			releaseutil.SortByRevision(releases)
+
+			g.Expect(obj.Status.History).To(testutil.Equal(expectHistory(releases)))
+
+			// Assert main chart configmap is present.
+			mainChartCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cm-main-chart",
+					Namespace: releaseNamespace,
+				},
+			}
+			err = testEnv.Get(context.TODO(), client.ObjectKeyFromObject(mainChartCM), mainChartCM)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// Assert subchart configmap is absent or present.
+			subChartCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cm-sub-chart",
+					Namespace: releaseNamespace,
+				},
+			}
+			err = testEnv.Get(context.TODO(), client.ObjectKeyFromObject(subChartCM), subChartCM)
+			if tt.subchartResourcesPresent {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+			}
+
+			// Assert subchart CRD is absent or present.
+			subChartCRD := &apiextensionsv1.CustomResourceDefinition{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "crontabs.stable.example.com",
+				},
+			}
+			err = testEnv.Get(context.TODO(), client.ObjectKeyFromObject(subChartCRD), subChartCRD)
+			if tt.subchartResourcesPresent {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+			}
+
+			// Assert main chart values.
+			g.Expect(chart.Values).To(testutil.Equal(tt.expectedMainChartValues))
 		})
 	}
 }
@@ -323,14 +548,14 @@ func TestInstall_failure(t *testing.T) {
 			eventRecorder: recorder,
 		}
 
-		req := &Request{Object: obj.DeepCopy(), Chart: chrt, Values: map[string]interface{}{"foo": "bar"}}
+		req := &Request{Object: obj.DeepCopy(), Chart: chrt, Values: map[string]any{"foo": "bar"}}
 		r.failure(req, nil, err)
 
 		expectMsg := fmt.Sprintf(fmtInstallFailure, mockReleaseNamespace, mockReleaseName, chrt.Name(),
 			chrt.Metadata.Version, err.Error())
 
 		g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-			*conditions.FalseCondition(v2.ReleasedCondition, v2.InstallFailedReason, expectMsg),
+			*conditions.FalseCondition(v2.ReleasedCondition, v2.InstallFailedReason, "%s", expectMsg),
 		}))
 		g.Expect(req.Object.Status.Failures).To(Equal(int64(1)))
 		g.Expect(recorder.GetEvents()).To(ConsistOf([]corev1.Event{
@@ -358,7 +583,7 @@ func TestInstall_failure(t *testing.T) {
 			eventRecorder: recorder,
 		}
 		req := &Request{Object: obj.DeepCopy(), Chart: chrt}
-		r.failure(req, mockLogBuffer(5, 10), err)
+		r.failure(req, mockLogBuffer(), err)
 
 		expectSubStr := "Last Helm logs"
 		g.Expect(conditions.IsFalse(req.Object, v2.ReleasedCondition)).To(BeTrue())
@@ -404,7 +629,7 @@ func TestInstall_success(t *testing.T) {
 			fmt.Sprintf("%s@%s", obj.Status.History.Latest().ChartName, obj.Status.History.Latest().ChartVersion))
 
 		g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-			*conditions.TrueCondition(v2.ReleasedCondition, v2.InstallSucceededReason, expectMsg),
+			*conditions.TrueCondition(v2.ReleasedCondition, v2.InstallSucceededReason, "%s", expectMsg),
 		}))
 		g.Expect(recorder.GetEvents()).To(ConsistOf([]corev1.Event{
 			{
@@ -420,6 +645,32 @@ func TestInstall_success(t *testing.T) {
 				},
 			},
 		}))
+	})
+
+	t.Run("clears failures if retry strategy is configured", func(t *testing.T) {
+		g := NewWithT(t)
+
+		recorder := testutil.NewFakeRecorder(10, false)
+		r := &Install{
+			eventRecorder: recorder,
+		}
+
+		req := &Request{
+			Object: obj.DeepCopy(),
+		}
+		req.Object.Spec.Install = &v2.Install{
+			Strategy: &v2.InstallStrategy{
+				Name: "RetryOnFailure",
+			},
+		}
+		req.Object.Status.Failures = 3
+		req.Object.Status.InstallFailures = 3
+		req.Object.Status.UpgradeFailures = 3
+		r.success(req)
+
+		g.Expect(req.Object.Status.Failures).To(BeZero())
+		g.Expect(req.Object.Status.InstallFailures).To(BeZero())
+		g.Expect(req.Object.Status.UpgradeFailures).To(BeZero())
 	})
 
 	t.Run("records success with TestSuccess=False", func(t *testing.T) {

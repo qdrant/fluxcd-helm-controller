@@ -24,23 +24,26 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	helmchart "helm.sh/helm/v3/pkg/chart"
-	helmchartutil "helm.sh/helm/v3/pkg/chartutil"
-	helmrelease "helm.sh/helm/v3/pkg/release"
-	helmreleaseutil "helm.sh/helm/v3/pkg/releaseutil"
-	helmstorage "helm.sh/helm/v3/pkg/storage"
-	helmdriver "helm.sh/helm/v3/pkg/storage/driver"
+	helmchartutil "helm.sh/helm/v4/pkg/chart/common"
+	helmchart "helm.sh/helm/v4/pkg/chart/v2"
+	helmreleasecommon "helm.sh/helm/v4/pkg/release/common"
+	helmrelease "helm.sh/helm/v4/pkg/release/v1"
+	helmreleaseutil "helm.sh/helm/v4/pkg/release/v1/util"
+	helmstorage "helm.sh/helm/v4/pkg/storage"
+	helmdriver "helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	eventv1 "github.com/fluxcd/pkg/apis/event/v1beta1"
 	"github.com/fluxcd/pkg/apis/meta"
+	"github.com/fluxcd/pkg/chartutil"
 	"github.com/fluxcd/pkg/runtime/conditions"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
-	"github.com/fluxcd/helm-controller/internal/chartutil"
 	"github.com/fluxcd/helm-controller/internal/digest"
 	"github.com/fluxcd/helm-controller/internal/release"
 	"github.com/fluxcd/helm-controller/internal/storage"
@@ -76,6 +79,9 @@ func TestUpgrade_Reconcile(t *testing.T) {
 		// expectHistory returns the expected History of the HelmRelease after
 		// upgrade.
 		expectHistory func(releases []*helmrelease.Release) v2.Snapshots
+		// expectInventory is the expected Inventory of the HelmRelease after
+		// upgrade.
+		expectInventory func(namespace string) *v2.ResourceInventory
 		// expectFailures is the expected Failures count of the HelmRelease.
 		expectFailures int64
 		// expectInstallFailures is the expected InstallFailures count of the
@@ -84,6 +90,9 @@ func TestUpgrade_Reconcile(t *testing.T) {
 		// expectUpgradeFailures is the expected UpgradeFailures count of the
 		// HelmRelease.
 		expectUpgradeFailures int64
+		// statusReader is an optional StatusReader to configure on the
+		// ConfigFactory.
+		statusReader bool
 	}{
 		{
 			name: "upgrade success",
@@ -94,7 +103,7 @@ func TestUpgrade_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Chart:     testutil.BuildChart(testutil.ChartWithTestHook()),
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -112,8 +121,22 @@ func TestUpgrade_Reconcile(t *testing.T) {
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[1])
+						obs.Action = v2.ReleaseActionUpgrade
+						return release.ObservedToSnapshot(obs)
+					}(),
 					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+				}
+			},
+			expectInventory: func(namespace string) *v2.ResourceInventory {
+				return &v2.ResourceInventory{
+					Entries: []v2.ResourceRef{
+						{
+							ID:      namespace + "_cm__ConfigMap",
+							Version: "v1",
+						},
+					},
 				}
 			},
 		},
@@ -126,7 +149,7 @@ func TestUpgrade_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Chart:     testutil.BuildChart(),
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -140,13 +163,17 @@ func TestUpgrade_Reconcile(t *testing.T) {
 			},
 			expectConditions: []metav1.Condition{
 				*conditions.FalseCondition(meta.ReadyCondition, v2.UpgradeFailedReason,
-					"post-upgrade hooks failed: 1 error occurred:\n\t* timed out waiting for the condition"),
+					"context deadline exceeded"),
 				*conditions.FalseCondition(v2.ReleasedCondition, v2.UpgradeFailedReason,
-					"post-upgrade hooks failed: 1 error occurred:\n\t* timed out waiting for the condition"),
+					"context deadline exceeded"),
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[1])
+						obs.Action = v2.ReleaseActionUpgrade
+						return release.ObservedToSnapshot(obs)
+					}(),
 					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 				}
 			},
@@ -168,7 +195,7 @@ func TestUpgrade_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Chart:     testutil.BuildChart(),
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -182,9 +209,9 @@ func TestUpgrade_Reconcile(t *testing.T) {
 			},
 			expectConditions: []metav1.Condition{
 				*conditions.FalseCondition(meta.ReadyCondition, v2.UpgradeFailedReason,
-					mockCreateErr.Error()),
+					"%s", mockCreateErr.Error()),
 				*conditions.FalseCondition(v2.ReleasedCondition, v2.UpgradeFailedReason,
-					mockCreateErr.Error()),
+					"%s", mockCreateErr.Error()),
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
@@ -210,7 +237,7 @@ func TestUpgrade_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Chart:     testutil.BuildChart(),
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -224,13 +251,17 @@ func TestUpgrade_Reconcile(t *testing.T) {
 			},
 			expectConditions: []metav1.Condition{
 				*conditions.FalseCondition(meta.ReadyCondition, v2.UpgradeFailedReason,
-					mockUpdateErr.Error()),
+					"%s", mockUpdateErr.Error()),
 				*conditions.FalseCondition(v2.ReleasedCondition, v2.UpgradeFailedReason,
-					mockUpdateErr.Error()),
+					"%s", mockUpdateErr.Error()),
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[1])
+						obs.Action = v2.ReleaseActionUpgrade
+						return release.ObservedToSnapshot(obs)
+					}(),
 					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 				}
 			},
@@ -246,7 +277,7 @@ func TestUpgrade_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Chart:     testutil.BuildChart(),
 						Version:   1,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -262,7 +293,11 @@ func TestUpgrade_Reconcile(t *testing.T) {
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[1])
+						obs.Action = v2.ReleaseActionUpgrade
+						return release.ObservedToSnapshot(obs)
+					}(),
 				}
 			},
 		},
@@ -275,14 +310,14 @@ func TestUpgrade_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Chart:     testutil.BuildChart(),
 						Version:   1,
-						Status:    helmrelease.StatusSuperseded,
+						Status:    helmreleasecommon.StatusSuperseded,
 					}),
 					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 						Name:      mockReleaseName,
 						Namespace: namespace,
 						Chart:     testutil.BuildChart(),
 						Version:   2,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -294,7 +329,7 @@ func TestUpgrade_Reconcile(t *testing.T) {
 							Name:      mockReleaseName,
 							Namespace: releases[0].Namespace,
 							Version:   1,
-							Status:    helmrelease.StatusDeployed.String(),
+							Status:    helmreleasecommon.StatusDeployed.String(),
 						},
 					},
 				}
@@ -307,12 +342,16 @@ func TestUpgrade_Reconcile(t *testing.T) {
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[2])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[2])
+						obs.Action = v2.ReleaseActionUpgrade
+						return release.ObservedToSnapshot(obs)
+					}(),
 					{
 						Name:      mockReleaseName,
 						Namespace: releases[0].Namespace,
 						Version:   1,
-						Status:    helmrelease.StatusDeployed.String(),
+						Status:    helmreleasecommon.StatusDeployed.String(),
 					},
 				}
 			},
@@ -326,7 +365,7 @@ func TestUpgrade_Reconcile(t *testing.T) {
 						Namespace: namespace,
 						Chart:     testutil.BuildChart(),
 						Version:   2,
-						Status:    helmrelease.StatusDeployed,
+						Status:    helmreleasecommon.StatusDeployed,
 					}),
 				}
 			},
@@ -347,7 +386,58 @@ func TestUpgrade_Reconcile(t *testing.T) {
 			},
 			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
 				return v2.Snapshots{
-					release.ObservedToSnapshot(release.ObserveRelease(releases[1])),
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[1])
+						obs.Action = v2.ReleaseActionUpgrade
+						return release.ObservedToSnapshot(obs)
+					}(),
+				}
+			},
+		},
+		{
+			name: "upgrade success with status reader",
+			releases: func(namespace string) []*helmrelease.Release {
+				return []*helmrelease.Release{
+					testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: namespace,
+						Chart:     testutil.BuildChart(testutil.ChartWithTestHook()),
+						Version:   1,
+						Status:    helmreleasecommon.StatusDeployed,
+					}),
+				}
+			},
+			chart:        testutil.BuildChart(),
+			statusReader: true,
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+				}
+			},
+			expectConditions: []metav1.Condition{
+				*conditions.TrueCondition(meta.ReadyCondition, v2.UpgradeSucceededReason, "Helm upgrade succeeded"),
+				*conditions.TrueCondition(v2.ReleasedCondition, v2.UpgradeSucceededReason, "Helm upgrade succeeded"),
+			},
+			expectHistory: func(releases []*helmrelease.Release) v2.Snapshots {
+				return v2.Snapshots{
+					func() *v2.Snapshot {
+						obs := release.ObserveRelease(releases[1])
+						obs.Action = v2.ReleaseActionUpgrade
+						return release.ObservedToSnapshot(obs)
+					}(),
+					release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+				}
+			},
+			expectInventory: func(namespace string) *v2.ResourceInventory {
+				return &v2.ResourceInventory{
+					Entries: []v2.ResourceRef{
+						{
+							ID:      namespace + "_cm__ConfigMap",
+							Version: "v1",
+						},
+					},
 				}
 			},
 		},
@@ -374,7 +464,7 @@ func TestUpgrade_Reconcile(t *testing.T) {
 					ReleaseName:      mockReleaseName,
 					TargetNamespace:  releaseNamespace,
 					StorageNamespace: releaseNamespace,
-					Timeout:          &metav1.Duration{Duration: 100 * time.Millisecond},
+					Timeout:          &metav1.Duration{Duration: 200 * time.Millisecond},
 				},
 			}
 			if tt.spec != nil {
@@ -383,6 +473,163 @@ func TestUpgrade_Reconcile(t *testing.T) {
 			if tt.status != nil {
 				obj.Status = tt.status(releases)
 			}
+
+			getter, err := RESTClientGetterFromManager(testEnv.Manager, obj.GetReleaseNamespace())
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cfgOpts := []action.ConfigFactoryOption{
+				action.WithStorage(action.DefaultStorageDriver, obj.GetStorageNamespace()),
+			}
+			var mockSR *testutil.MockStatusReader
+			if tt.statusReader {
+				mockSR = &testutil.MockStatusReader{}
+				cfgOpts = append(cfgOpts, action.WithResourceManager(mockSR.NewResourceManagerFuncWithClient(testEnv.Client, testEnv.Manager.GetRESTMapper())))
+			}
+			cfg, err := action.NewConfigFactory(getter, cfgOpts...)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			store := helmstorage.Init(cfg.Driver)
+			for _, r := range releases {
+				g.Expect(store.Create(r)).To(Succeed())
+			}
+
+			if tt.driver != nil {
+				cfg.Driver = tt.driver(cfg.Driver)
+			}
+
+			recorder := new(record.FakeRecorder)
+			got := NewUpgrade(cfg, recorder, false).Reconcile(context.TODO(), &Request{
+				Object: obj,
+				Chart:  tt.chart,
+				Values: tt.values,
+			})
+			if tt.wantErr != nil {
+				g.Expect(got).To(Equal(tt.wantErr))
+			} else {
+				g.Expect(got).ToNot(HaveOccurred())
+			}
+
+			g.Expect(obj.Status.Conditions).To(conditions.MatchConditions(tt.expectConditions))
+
+			releases, _ = storeHistory(store, mockReleaseName)
+			helmreleaseutil.SortByRevision(releases)
+
+			if tt.expectHistory != nil {
+				g.Expect(obj.Status.History).To(testutil.Equal(tt.expectHistory(releases)))
+			} else {
+				g.Expect(obj.Status.History).To(BeEmpty(), "expected history to be empty")
+			}
+
+			g.Expect(obj.Status.Failures).To(Equal(tt.expectFailures))
+			g.Expect(obj.Status.InstallFailures).To(Equal(tt.expectInstallFailures))
+			g.Expect(obj.Status.UpgradeFailures).To(Equal(tt.expectUpgradeFailures))
+			g.Expect(obj.Status.LastAttemptedReleaseAction).To(Equal(v2.ReleaseActionUpgrade))
+			g.Expect(obj.Status.LastAttemptedReleaseActionDuration).ToNot(BeNil())
+
+			if tt.expectInventory != nil {
+				g.Expect(obj.Status.Inventory).To(testutil.Equal(tt.expectInventory(releaseNamespace)))
+			}
+
+			if mockSR != nil {
+				g.Expect(mockSR.SupportsCalled()).To(BeNumerically(">", 0), "expected StatusReader.Supports to be called")
+			}
+		})
+	}
+}
+
+func TestUpgrade_Reconcile_withSubchartWithCRDs(t *testing.T) {
+	getValues := func(subchartValues map[string]any) helmchartutil.Values {
+		return helmchartutil.Values{"subchart": subchartValues}
+	}
+
+	releases := func(namespace string) []*helmrelease.Release {
+		return []*helmrelease.Release{
+			testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+				Name:      mockReleaseName,
+				Namespace: namespace,
+				Chart:     testutil.BuildChart(testutil.ChartWithTestHook()),
+				Version:   1,
+				Status:    helmreleasecommon.StatusDeployed,
+			}),
+		}
+	}
+
+	status := func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+		return v2.HelmReleaseStatus{
+			History: v2.Snapshots{
+				release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+			},
+		}
+	}
+
+	expectConditions := []metav1.Condition{
+		*conditions.TrueCondition(meta.ReadyCondition, v2.UpgradeSucceededReason, "Helm upgrade succeeded"),
+		*conditions.TrueCondition(v2.ReleasedCondition, v2.UpgradeSucceededReason, "Helm upgrade succeeded"),
+	}
+
+	expectHistory := func(releases []*helmrelease.Release) v2.Snapshots {
+		obs := release.ObserveRelease(releases[1])
+		obs.Action = v2.ReleaseActionUpgrade
+		return v2.Snapshots{
+			release.ObservedToSnapshot(obs),
+			release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+		}
+	}
+
+	for _, tt := range []struct {
+		name                     string
+		subchartValues           map[string]any
+		subchartResourcesPresent bool
+		expectedMainChartValues  map[string]any
+	}{
+		{
+			name:                     "subchart disabled should not deploy resources, including CRDs",
+			subchartValues:           map[string]any{"enabled": false},
+			subchartResourcesPresent: false,
+			expectedMainChartValues: map[string]any{
+				"foo":       "baz",
+				"myimports": map[string]any{"myint": 0},
+			},
+		},
+		{
+			name:                     "subchart enabled should deploy resources, including CRDs",
+			subchartValues:           map[string]any{"enabled": true},
+			subchartResourcesPresent: true,
+			expectedMainChartValues: map[string]any{
+				"foo":       "baz",
+				"myint":     123,
+				"myimports": map[string]any{"myint": 0}, // should be 456: https://github.com/helm/helm/issues/13223
+				"subchart": map[string]any{
+					"foo":     "bar",
+					"global":  map[string]any{},
+					"exports": map[string]any{"data": map[string]any{"myint": 123}},
+					"default": map[string]any{"data": map[string]any{"myint": 456}},
+				},
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			namedNS, err := testEnv.CreateNamespace(context.TODO(), mockReleaseNamespace)
+			g.Expect(err).NotTo(HaveOccurred())
+			t.Cleanup(func() {
+				_ = testEnv.Delete(context.TODO(), namedNS)
+			})
+			releaseNamespace := namedNS.Name
+
+			releases := releases(releaseNamespace)
+			helmreleaseutil.SortByRevision(releases)
+
+			obj := &v2.HelmRelease{
+				Spec: v2.HelmReleaseSpec{
+					ReleaseName:      mockReleaseName,
+					TargetNamespace:  releaseNamespace,
+					StorageNamespace: releaseNamespace,
+					Timeout:          &metav1.Duration{Duration: 100 * time.Millisecond},
+				},
+			}
+			obj.Status = status(releases)
 
 			getter, err := RESTClientGetterFromManager(testEnv.Manager, obj.GetReleaseNamespace())
 			g.Expect(err).ToNot(HaveOccurred())
@@ -397,36 +644,64 @@ func TestUpgrade_Reconcile(t *testing.T) {
 				g.Expect(store.Create(r)).To(Succeed())
 			}
 
-			if tt.driver != nil {
-				cfg.Driver = tt.driver(cfg.Driver)
+			// Delete any prior CRD.
+			subChartCRD := &apiextensionsv1.CustomResourceDefinition{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "crontabs.stable.example.com",
+				},
 			}
+			_ = testEnv.Delete(context.TODO(), subChartCRD)
 
+			chart := testutil.BuildChartWithSubchartWithCRD()
 			recorder := new(record.FakeRecorder)
-			got := NewUpgrade(cfg, recorder).Reconcile(context.TODO(), &Request{
+			got := NewUpgrade(cfg, recorder, false).Reconcile(context.TODO(), &Request{
 				Object: obj,
-				Chart:  tt.chart,
-				Values: tt.values,
+				Chart:  chart,
+				Values: getValues(tt.subchartValues),
 			})
-			if tt.wantErr != nil {
-				g.Expect(got).To(Equal(tt.wantErr))
-			} else {
-				g.Expect(got).ToNot(HaveOccurred())
-			}
+			g.Expect(got).ToNot(HaveOccurred())
 
-			g.Expect(obj.Status.Conditions).To(conditions.MatchConditions(tt.expectConditions))
+			g.Expect(obj.Status.Conditions).To(conditions.MatchConditions(expectConditions))
 
-			releases, _ = store.History(mockReleaseName)
+			releases, _ = storeHistory(store, mockReleaseName)
 			helmreleaseutil.SortByRevision(releases)
 
-			if tt.expectHistory != nil {
-				g.Expect(obj.Status.History).To(testutil.Equal(tt.expectHistory(releases)))
+			g.Expect(obj.Status.History).To(testutil.Equal(expectHistory(releases)))
+
+			// Assert main chart configmap is present.
+			mainChartCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cm-main-chart",
+					Namespace: releaseNamespace,
+				},
+			}
+			err = testEnv.Get(context.TODO(), client.ObjectKeyFromObject(mainChartCM), mainChartCM)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// Assert subchart configmap is absent or present.
+			subChartCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cm-sub-chart",
+					Namespace: releaseNamespace,
+				},
+			}
+			err = testEnv.Get(context.TODO(), client.ObjectKeyFromObject(subChartCM), subChartCM)
+			if tt.subchartResourcesPresent {
+				g.Expect(err).NotTo(HaveOccurred())
 			} else {
-				g.Expect(obj.Status.History).To(BeEmpty(), "expected history to be empty")
+				g.Expect(err).To(HaveOccurred())
 			}
 
-			g.Expect(obj.Status.Failures).To(Equal(tt.expectFailures))
-			g.Expect(obj.Status.InstallFailures).To(Equal(tt.expectInstallFailures))
-			g.Expect(obj.Status.UpgradeFailures).To(Equal(tt.expectUpgradeFailures))
+			// Assert subchart CRD is absent or present.
+			err = testEnv.Get(context.TODO(), client.ObjectKeyFromObject(subChartCRD), subChartCRD)
+			if tt.subchartResourcesPresent {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+			}
+
+			// Assert main chart values.
+			g.Expect(chart.Values).To(testutil.Equal(tt.expectedMainChartValues))
 		})
 	}
 }
@@ -454,14 +729,14 @@ func TestUpgrade_failure(t *testing.T) {
 			eventRecorder: recorder,
 		}
 
-		req := &Request{Object: obj.DeepCopy(), Chart: chrt, Values: map[string]interface{}{"foo": "bar"}}
+		req := &Request{Object: obj.DeepCopy(), Chart: chrt, Values: map[string]any{"foo": "bar"}}
 		r.failure(req, nil, err)
 
 		expectMsg := fmt.Sprintf(fmtUpgradeFailure, mockReleaseNamespace, mockReleaseName, chrt.Name(),
 			chrt.Metadata.Version, err.Error())
 
 		g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-			*conditions.FalseCondition(v2.ReleasedCondition, v2.UpgradeFailedReason, expectMsg),
+			*conditions.FalseCondition(v2.ReleasedCondition, v2.UpgradeFailedReason, "%s", expectMsg),
 		}))
 		g.Expect(req.Object.Status.Failures).To(Equal(int64(1)))
 		g.Expect(recorder.GetEvents()).To(ConsistOf([]corev1.Event{
@@ -489,7 +764,7 @@ func TestUpgrade_failure(t *testing.T) {
 			eventRecorder: recorder,
 		}
 		req := &Request{Object: obj.DeepCopy(), Chart: chrt}
-		r.failure(req, mockLogBuffer(5, 10), err)
+		r.failure(req, mockLogBuffer(), err)
 
 		expectSubStr := "Last Helm logs"
 		g.Expect(conditions.IsFalse(req.Object, v2.ReleasedCondition)).To(BeTrue())
@@ -535,7 +810,7 @@ func TestUpgrade_success(t *testing.T) {
 			fmt.Sprintf("%s@%s", obj.Status.History.Latest().ChartName, obj.Status.History.Latest().ChartVersion))
 
 		g.Expect(req.Object.Status.Conditions).To(conditions.MatchConditions([]metav1.Condition{
-			*conditions.TrueCondition(v2.ReleasedCondition, v2.UpgradeSucceededReason, expectMsg),
+			*conditions.TrueCondition(v2.ReleasedCondition, v2.UpgradeSucceededReason, "%s", expectMsg),
 		}))
 		g.Expect(recorder.GetEvents()).To(ConsistOf([]corev1.Event{
 			{
@@ -551,6 +826,32 @@ func TestUpgrade_success(t *testing.T) {
 				},
 			},
 		}))
+	})
+
+	t.Run("clears failures if retry strategy is configured", func(t *testing.T) {
+		g := NewWithT(t)
+
+		recorder := testutil.NewFakeRecorder(10, false)
+		r := &Upgrade{
+			eventRecorder: recorder,
+		}
+
+		req := &Request{
+			Object: obj.DeepCopy(),
+		}
+		req.Object.Spec.Upgrade = &v2.Upgrade{
+			Strategy: &v2.UpgradeStrategy{
+				Name: "RetryOnFailure",
+			},
+		}
+		req.Object.Status.Failures = 3
+		req.Object.Status.InstallFailures = 3
+		req.Object.Status.UpgradeFailures = 3
+		r.success(req)
+
+		g.Expect(req.Object.Status.Failures).To(BeZero())
+		g.Expect(req.Object.Status.InstallFailures).To(BeZero())
+		g.Expect(req.Object.Status.UpgradeFailures).To(BeZero())
 	})
 
 	t.Run("records success with TestSuccess=False", func(t *testing.T) {

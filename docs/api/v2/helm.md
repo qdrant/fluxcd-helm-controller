@@ -187,14 +187,14 @@ Defaults to the namespace of the HelmRelease.</p>
 <td>
 <code>dependsOn</code><br>
 <em>
-<a href="https://godoc.org/github.com/fluxcd/pkg/apis/meta#NamespacedObjectReference">
-[]github.com/fluxcd/pkg/apis/meta.NamespacedObjectReference
+<a href="#cd.qdrant.io/v2.DependencyReference">
+[]DependencyReference
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>DependsOn may contain a meta.NamespacedObjectReference slice with
+<p>DependsOn may contain a DependencyReference slice with
 references to HelmRelease resources that must be ready before this HelmRelease
 can be reconciled.</p>
 </td>
@@ -350,8 +350,8 @@ Uninstall
 <td>
 <code>valuesFrom</code><br>
 <em>
-<a href="#cd.qdrant.io/v2.ValuesReference">
-[]ValuesReference
+<a href="https://godoc.org/github.com/fluxcd/pkg/apis/meta#ValuesReference">
+[]github.com/fluxcd/pkg/apis/meta.ValuesReference
 </a>
 </em>
 </td>
@@ -376,6 +376,22 @@ Kubernetes pkg/apis/apiextensions/v1.JSON
 </tr>
 <tr>
 <td>
+<code>commonMetadata</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.CommonMetadata">
+CommonMetadata
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CommonMetadata specifies the common labels and annotations that are
+applied to all resources. Any existing label or annotation will be
+overridden if its key matches a common one.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>postRenderers</code><br>
 <em>
 <a href="#cd.qdrant.io/v2.PostRenderer">
@@ -387,6 +403,39 @@ Kubernetes pkg/apis/apiextensions/v1.JSON
 <em>(Optional)</em>
 <p>PostRenderers holds an array of Helm PostRenderers, which will be applied in order
 of their definition.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>waitStrategy</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.WaitStrategy">
+WaitStrategy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>WaitStrategy defines Helm&rsquo;s wait strategy for waiting for applied
+resources to become ready.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>healthCheckExprs</code><br>
+<em>
+<a href="https://godoc.org/github.com/fluxcd/pkg/apis/kustomize#CustomHealthCheck">
+[]github.com/fluxcd/pkg/apis/kustomize.CustomHealthCheck
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>HealthCheckExprs is a list of healthcheck expressions for evaluating the
+health of custom resources using Common Expression Language (CEL).
+The expressions are evaluated only when the specific Helm action
+taking place has wait enabled, i.e. DisableWait is false, and the
+&lsquo;poller&rsquo; WaitStrategy is used.</p>
 </td>
 </tr>
 </table>
@@ -408,6 +457,9 @@ HelmReleaseStatus
 </table>
 </div>
 </div>
+<h3 id="cd.qdrant.io/v2.ActionStrategyName">ActionStrategyName
+(<code>string</code> alias)</h3>
+<p>ActionStrategyName is a valid name for an action strategy.</p>
 <h3 id="cd.qdrant.io/v2.CRDsPolicy">CRDsPolicy
 (<code>string</code> alias)</h3>
 <p>
@@ -417,6 +469,51 @@ HelmReleaseStatus
 </p>
 <p>CRDsPolicy defines the install/upgrade approach to use for CRDs when
 installing or upgrading a HelmRelease.</p>
+<h3 id="cd.qdrant.io/v2.CommonMetadata">CommonMetadata
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+</p>
+<p>CommonMetadata defines the common labels and annotations.</p>
+<div class="md-typeset__scrollwrap">
+<div class="md-typeset__table">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>annotations</code><br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Annotations to be added to the object&rsquo;s metadata.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>labels</code><br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Labels to be added to the object&rsquo;s metadata.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <h3 id="cd.qdrant.io/v2.CrossNamespaceObjectReference">CrossNamespaceObjectReference
 </h3>
 <p>
@@ -548,6 +645,67 @@ string
 <em>(Optional)</em>
 <p>Namespace of the referent, defaults to the namespace of the Kubernetes
 resource object that contains the reference.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<h3 id="cd.qdrant.io/v2.DependencyReference">DependencyReference
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+</p>
+<p>DependencyReference defines a HelmRelease dependency on another HelmRelease resource.</p>
+<div class="md-typeset__scrollwrap">
+<div class="md-typeset__table">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code><br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Name of the referent.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>namespace</code><br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Namespace of the referent, defaults to the namespace of the HelmRelease
+resource object that contains the reference.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>readyExpr</code><br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ReadyExpr is a CEL expression that can be used to assess the readiness
+of a dependency. When specified, the built-in readiness check
+is replaced by the logic defined in the CEL expression.
+To make the CEL expression additive to the built-in readiness check,
+the feature gate <code>AdditiveCELDependencyCheck</code> must be set to <code>true</code>.</p>
 </td>
 </tr>
 </tbody>
@@ -1197,14 +1355,14 @@ Defaults to the namespace of the HelmRelease.</p>
 <td>
 <code>dependsOn</code><br>
 <em>
-<a href="https://godoc.org/github.com/fluxcd/pkg/apis/meta#NamespacedObjectReference">
-[]github.com/fluxcd/pkg/apis/meta.NamespacedObjectReference
+<a href="#cd.qdrant.io/v2.DependencyReference">
+[]DependencyReference
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>DependsOn may contain a meta.NamespacedObjectReference slice with
+<p>DependsOn may contain a DependencyReference slice with
 references to HelmRelease resources that must be ready before this HelmRelease
 can be reconciled.</p>
 </td>
@@ -1360,8 +1518,8 @@ Uninstall
 <td>
 <code>valuesFrom</code><br>
 <em>
-<a href="#cd.qdrant.io/v2.ValuesReference">
-[]ValuesReference
+<a href="https://godoc.org/github.com/fluxcd/pkg/apis/meta#ValuesReference">
+[]github.com/fluxcd/pkg/apis/meta.ValuesReference
 </a>
 </em>
 </td>
@@ -1386,6 +1544,22 @@ Kubernetes pkg/apis/apiextensions/v1.JSON
 </tr>
 <tr>
 <td>
+<code>commonMetadata</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.CommonMetadata">
+CommonMetadata
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CommonMetadata specifies the common labels and annotations that are
+applied to all resources. Any existing label or annotation will be
+overridden if its key matches a common one.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>postRenderers</code><br>
 <em>
 <a href="#cd.qdrant.io/v2.PostRenderer">
@@ -1397,6 +1571,39 @@ Kubernetes pkg/apis/apiextensions/v1.JSON
 <em>(Optional)</em>
 <p>PostRenderers holds an array of Helm PostRenderers, which will be applied in order
 of their definition.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>waitStrategy</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.WaitStrategy">
+WaitStrategy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>WaitStrategy defines Helm&rsquo;s wait strategy for waiting for applied
+resources to become ready.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>healthCheckExprs</code><br>
+<em>
+<a href="https://godoc.org/github.com/fluxcd/pkg/apis/kustomize#CustomHealthCheck">
+[]github.com/fluxcd/pkg/apis/kustomize.CustomHealthCheck
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>HealthCheckExprs is a list of healthcheck expressions for evaluating the
+health of custom resources using Common Expression Language (CEL).
+The expressions are evaluated only when the specific Helm action
+taking place has wait enabled, i.e. DisableWait is false, and the
+&lsquo;poller&rsquo; WaitStrategy is used.</p>
 </td>
 </tr>
 </tbody>
@@ -1442,6 +1649,19 @@ string
 <td>
 <em>(Optional)</em>
 <p>ObservedPostRenderersDigest is the digest for the post-renderers of
+the last successful reconciliation attempt.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>observedCommonMetadataDigest</code><br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ObservedCommonMetadataDigest is the digest for the common metadata of
 the last successful reconciliation attempt.</p>
 </td>
 </tr>
@@ -1515,6 +1735,21 @@ up to the last successfully completed release.</p>
 </tr>
 <tr>
 <td>
+<code>inventory</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.ResourceInventory">
+ResourceInventory
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Inventory contains the list of Kubernetes resource object references
+that have been applied for this release.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>lastAttemptedReleaseAction</code><br>
 <em>
 <a href="#cd.qdrant.io/v2.ReleaseAction">
@@ -1525,7 +1760,23 @@ ReleaseAction
 <td>
 <em>(Optional)</em>
 <p>LastAttemptedReleaseAction is the last release action performed for this
-HelmRelease. It is used to determine the active remediation strategy.</p>
+HelmRelease. It is used to determine the active retry or remediation
+strategy.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>lastAttemptedReleaseActionDuration</code><br>
+<em>
+<a href="https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#Duration">
+Kubernetes meta/v1.Duration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>LastAttemptedReleaseActionDuration is the duration of the last
+release action performed for this HelmRelease.</p>
 </td>
 </tr>
 <tr>
@@ -1604,8 +1855,8 @@ string
 <td>
 <em>(Optional)</em>
 <p>LastAttemptedValuesChecksum is the SHA1 checksum for the values of the last
-reconciliation attempt.
-Deprecated: Use LastAttemptedConfigDigest instead.</p>
+reconciliation attempt.</p>
+<p>Deprecated: Use LastAttemptedConfigDigest instead.</p>
 </td>
 </tr>
 <tr>
@@ -1617,8 +1868,8 @@ int
 </td>
 <td>
 <em>(Optional)</em>
-<p>LastReleaseRevision is the revision of the last successful Helm release.
-Deprecated: Use History instead.</p>
+<p>LastReleaseRevision is the revision of the last successful Helm release.</p>
+<p>Deprecated: Use History instead.</p>
 </td>
 </tr>
 <tr>
@@ -1632,19 +1883,6 @@ string
 <em>(Optional)</em>
 <p>LastAttemptedConfigDigest is the digest for the config (better known as
 &ldquo;values&rdquo;) of the last reconciliation attempt.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>lastHandledForceAt</code><br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>LastHandledForceAt holds the value of the most recent force request
-value, so a change of the annotation value can be detected.</p>
 </td>
 </tr>
 <tr>
@@ -1672,6 +1910,21 @@ github.com/fluxcd/pkg/apis/meta.ReconcileRequestStatus
 <td>
 <p>
 (Members of <code>ReconcileRequestStatus</code> are embedded into this type.)
+</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ForceRequestStatus</code><br>
+<em>
+<a href="https://godoc.org/github.com/fluxcd/pkg/apis/meta#ForceRequestStatus">
+github.com/fluxcd/pkg/apis/meta.ForceRequestStatus
+</a>
+</em>
+</td>
+<td>
+<p>
+(Members of <code>ForceRequestStatus</code> are embedded into this type.)
 </p>
 </td>
 </tr>
@@ -1766,6 +2019,22 @@ Jobs for hooks) during the performance of a Helm install action. Defaults to
 </tr>
 <tr>
 <td>
+<code>strategy</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.InstallStrategy">
+InstallStrategy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Strategy defines the install strategy to use for this HelmRelease.
+Defaults to &lsquo;RemediateOnFailure&rsquo;, or &lsquo;RetryOnFailure&rsquo; when the
+DefaultToRetryOnFailure feature gate is enabled.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>remediation</code><br>
 <em>
 <a href="#cd.qdrant.io/v2.InstallRemediation">
@@ -1777,6 +2046,19 @@ InstallRemediation
 <em>(Optional)</em>
 <p>Remediation holds the remediation configuration for when the Helm install
 action for the HelmRelease fails. The default is to not perform any action.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>disableTakeOwnership</code><br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DisableTakeOwnership disables taking ownership of existing resources
+during the Helm install action. Defaults to false.</p>
 </td>
 </tr>
 <tr>
@@ -1828,6 +2110,19 @@ bool
 <em>(Optional)</em>
 <p>DisableOpenAPIValidation prevents the Helm install action from validating
 rendered templates against the Kubernetes OpenAPI Schema.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>disableSchemaValidation</code><br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DisableSchemaValidation prevents the Helm install action from validating
+the values against the JSON Schema.</p>
 </td>
 </tr>
 <tr>
@@ -1896,6 +2191,19 @@ HelmReleaseSpec.TargetNamespace if it does not exist yet.
 On uninstall, the namespace will not be garbage collected.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>serverSideApply</code><br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ServerSideApply enables server-side apply for resources during install.
+Defaults to true (or false when UseHelm3Defaults feature gate is enabled).</p>
+</td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -1956,6 +2264,54 @@ bool
 <em>(Optional)</em>
 <p>RemediateLastFailure tells the controller to remediate the last failure, when
 no retries remain. Defaults to &lsquo;false&rsquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<h3 id="cd.qdrant.io/v2.InstallStrategy">InstallStrategy
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#cd.qdrant.io/v2.Install">Install</a>)
+</p>
+<p>InstallStrategy holds the configuration for Helm install strategy.</p>
+<div class="md-typeset__scrollwrap">
+<div class="md-typeset__table">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code><br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Name of the install strategy.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>retryInterval</code><br>
+<em>
+<a href="https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#Duration">
+Kubernetes meta/v1.Duration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>RetryInterval is the interval at which to retry a failed install.
+Can be used only when Name is set to RetryOnFailure.
+Defaults to &lsquo;5m&rsquo;.</p>
 </td>
 </tr>
 </tbody>
@@ -2053,7 +2409,8 @@ Kustomize
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>, 
+<a href="#cd.qdrant.io/v2.Snapshot">Snapshot</a>)
 </p>
 <p>ReleaseAction is the action to perform a Helm release.</p>
 <h3 id="cd.qdrant.io/v2.Remediation">Remediation
@@ -2068,6 +2425,89 @@ UpgradeRemediation.</p>
 </p>
 <p>RemediationStrategy returns the strategy to use to remediate a failed install
 or upgrade.</p>
+<h3 id="cd.qdrant.io/v2.ResourceInventory">ResourceInventory
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
+</p>
+<p>ResourceInventory contains a list of Kubernetes resource object references
+that have been applied by a HelmRelease.</p>
+<div class="md-typeset__scrollwrap">
+<div class="md-typeset__table">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>entries</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.ResourceRef">
+[]ResourceRef
+</a>
+</em>
+</td>
+<td>
+<p>Entries of Kubernetes resource object references.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<h3 id="cd.qdrant.io/v2.ResourceRef">ResourceRef
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#cd.qdrant.io/v2.ResourceInventory">ResourceInventory</a>)
+</p>
+<p>ResourceRef contains the information necessary to locate a resource within a cluster.</p>
+<div class="md-typeset__scrollwrap">
+<div class="md-typeset__table">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>id</code><br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ID is the string representation of the Kubernetes resource object&rsquo;s metadata,
+in the format &lsquo;<namespace><em><name></em><group>_<kind>&rsquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>v</code><br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Version is the API version of the Kubernetes resource object&rsquo;s kind.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<h3 id="cd.qdrant.io/v2.Retry">Retry
+</h3>
+<p>Retry defines a consistent interface for retry strategies from
+InstallStrategy and UpgradeStrategy.</p>
 <h3 id="cd.qdrant.io/v2.Rollback">Rollback
 </h3>
 <p>
@@ -2149,7 +2589,14 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>Recreate performs pod restarts for the resource if applicable.</p>
+<p>Recreate performs pod restarts for any managed workloads.</p>
+<p>Deprecated: This behavior was deprecated in Helm 3:
+- Deprecation: <a href="https://github.com/helm/helm/pull/6463">https://github.com/helm/helm/pull/6463</a>
+- Removal: <a href="https://github.com/helm/helm/pull/31023">https://github.com/helm/helm/pull/31023</a>
+After helm-controller was upgraded to the Helm 4 SDK,
+this field is no longer functional and will print a
+warning if set to true. It will also be removed in a
+future release.</p>
 </td>
 </tr>
 <tr>
@@ -2161,7 +2608,10 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>Force forces resource updates through a replacement strategy.</p>
+<p>Force forces resource updates through a replacement strategy
+that avoids 3-way merge conflicts on client-side apply.
+This field is ignored for server-side apply (which always
+forces conflicts with other field managers).</p>
 </td>
 </tr>
 <tr>
@@ -2177,10 +2627,36 @@ bool
 rollback action when it fails.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>serverSideApply</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.ServerSideApplyMode">
+ServerSideApplyMode
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ServerSideApply enables server-side apply for resources during rollback.
+Can be &ldquo;enabled&rdquo;, &ldquo;disabled&rdquo;, or &ldquo;auto&rdquo;.
+When &ldquo;auto&rdquo;, server-side apply usage will be based on the release&rsquo;s previous usage.
+Defaults to &ldquo;auto&rdquo;.</p>
+</td>
+</tr>
 </tbody>
 </table>
 </div>
 </div>
+<h3 id="cd.qdrant.io/v2.ServerSideApplyMode">ServerSideApplyMode
+(<code>string</code> alias)</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#cd.qdrant.io/v2.Rollback">Rollback</a>, 
+<a href="#cd.qdrant.io/v2.Upgrade">Upgrade</a>)
+</p>
+<p>ServerSideApplyMode defines the server-side apply mode for Helm upgrade and
+rollback actions.</p>
 <h3 id="cd.qdrant.io/v2.Snapshot">Snapshot
 </h3>
 <p>Snapshot captures a point-in-time copy of the status information for a Helm release,
@@ -2205,8 +2681,8 @@ string
 <td>
 <em>(Optional)</em>
 <p>APIVersion is the API version of the Snapshot.
-Provisional: when the calculation method of the Digest field is changed,
-this field will be used to distinguish between the old and new methods.</p>
+When the calculation method of the Digest field is changed, this
+field will be used to distinguish between the old and new methods.</p>
 </td>
 </tr>
 <tr>
@@ -2263,6 +2739,20 @@ string
 </td>
 <td>
 <p>Status is the current state of the release.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>action</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.ReleaseAction">
+ReleaseAction
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Action is the action that resulted in this snapshot being created.</p>
 </td>
 </tr>
 <tr>
@@ -2391,6 +2881,10 @@ string
 <a href="#cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
 </p>
 <p>Snapshots is a list of Snapshot objects.</p>
+<h3 id="cd.qdrant.io/v2.Strategy">Strategy
+</h3>
+<p>Strategy defines a consistent interface for InstallStrategy and
+UpgradeStrategy.</p>
 <h3 id="cd.qdrant.io/v2.Test">Test
 </h3>
 <p>
@@ -2654,6 +3148,22 @@ Jobs for hooks) during the performance of a Helm upgrade action. Defaults to
 </tr>
 <tr>
 <td>
+<code>strategy</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.UpgradeStrategy">
+UpgradeStrategy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Strategy defines the upgrade strategy to use for this HelmRelease.
+Defaults to &lsquo;RemediateOnFailure&rsquo;, or &lsquo;RetryOnFailure&rsquo; when the
+DefaultToRetryOnFailure feature gate is enabled.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>remediation</code><br>
 <em>
 <a href="#cd.qdrant.io/v2.UpgradeRemediation">
@@ -2665,6 +3175,19 @@ UpgradeRemediation
 <em>(Optional)</em>
 <p>Remediation holds the remediation configuration for when the Helm upgrade
 action for the HelmRelease fails. The default is to not perform any action.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>disableTakeOwnership</code><br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DisableTakeOwnership disables taking ownership of existing resources
+during the Helm upgrade action. Defaults to false.</p>
 </td>
 </tr>
 <tr>
@@ -2720,6 +3243,19 @@ rendered templates against the Kubernetes OpenAPI Schema.</p>
 </tr>
 <tr>
 <td>
+<code>disableSchemaValidation</code><br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DisableSchemaValidation prevents the Helm upgrade action from validating
+the values against the JSON Schema.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>force</code><br>
 <em>
 bool
@@ -2727,7 +3263,10 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>Force forces resource updates through a replacement strategy.</p>
+<p>Force forces resource updates through a replacement strategy
+that avoids 3-way merge conflicts on client-side apply.
+This field is ignored for server-side apply (which always
+forces conflicts with other field managers).</p>
 </td>
 </tr>
 <tr>
@@ -2779,6 +3318,23 @@ but not deleted.</p>
 <p>By default, CRDs are not applied during Helm upgrade action. With this
 option users can opt-in to CRD upgrade, which is not (yet) natively supported by Helm.
 <a href="https://helm.sh/docs/chart_best_practices/custom_resource_definitions">https://helm.sh/docs/chart_best_practices/custom_resource_definitions</a>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serverSideApply</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.ServerSideApplyMode">
+ServerSideApplyMode
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ServerSideApply enables server-side apply for resources during upgrade.
+Can be &ldquo;enabled&rdquo;, &ldquo;disabled&rdquo;, or &ldquo;auto&rdquo;.
+When &ldquo;auto&rdquo;, server-side apply usage will be based on the release&rsquo;s previous usage.
+Defaults to &ldquo;auto&rdquo;.</p>
 </td>
 </tr>
 </tbody>
@@ -2861,14 +3417,13 @@ RemediationStrategy
 </table>
 </div>
 </div>
-<h3 id="cd.qdrant.io/v2.ValuesReference">ValuesReference
+<h3 id="cd.qdrant.io/v2.UpgradeStrategy">UpgradeStrategy
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.Upgrade">Upgrade</a>)
 </p>
-<p>ValuesReference contains a reference to a resource containing Helm values,
-and optionally the key they can be found at.</p>
+<p>UpgradeStrategy holds the configuration for Helm upgrade strategy.</p>
 <div class="md-typeset__scrollwrap">
 <div class="md-typeset__table">
 <table>
@@ -2881,72 +3436,82 @@ and optionally the key they can be found at.</p>
 <tbody>
 <tr>
 <td>
-<code>kind</code><br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>Kind of the values referent, valid values are (&lsquo;Secret&rsquo;, &lsquo;ConfigMap&rsquo;).</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>name</code><br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>Name of the values referent. Should reside in the same namespace as the
-referring resource.</p>
+<p>Name of the upgrade strategy.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>valuesKey</code><br>
+<code>retryInterval</code><br>
 <em>
-string
+<a href="https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#Duration">
+Kubernetes meta/v1.Duration
+</a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ValuesKey is the data key where the values.yaml or a specific value can be
-found at. Defaults to &lsquo;values.yaml&rsquo;.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>targetPath</code><br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>TargetPath is the YAML dot notation path the value should be merged at. When
-set, the ValuesKey is expected to be a single flat value. Defaults to &lsquo;None&rsquo;,
-which results in the values getting merged at the root.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>optional</code><br>
-<em>
-bool
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Optional marks this ValuesReference as optional. When set, a not found error
-for the values reference is ignored, but any ValuesKey, TargetPath or
-transient error will still result in a reconciliation failure.</p>
+<p>RetryInterval is the interval at which to retry a failed upgrade.
+Can be used only when Name is set to RetryOnFailure.
+Defaults to &lsquo;5m&rsquo;.</p>
 </td>
 </tr>
 </tbody>
 </table>
 </div>
 </div>
+<h3 id="cd.qdrant.io/v2.WaitStrategy">WaitStrategy
+</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+</p>
+<p>WaitStrategy defines Helm&rsquo;s wait strategy for waiting for applied
+resources to become ready.</p>
+<div class="md-typeset__scrollwrap">
+<div class="md-typeset__table">
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code><br>
+<em>
+<a href="#cd.qdrant.io/v2.WaitStrategyName">
+WaitStrategyName
+</a>
+</em>
+</td>
+<td>
+<p>Name is Helm&rsquo;s wait strategy for waiting for applied resources to
+become ready. One of &lsquo;poller&rsquo; or &lsquo;legacy&rsquo;. The &lsquo;poller&rsquo; strategy uses
+kstatus to poll resource statuses, while the &lsquo;legacy&rsquo; strategy uses
+Helm v3&rsquo;s waiting logic.
+Defaults to &lsquo;poller&rsquo;, or to &lsquo;legacy&rsquo; when UseHelm3Defaults feature
+gate is enabled.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<h3 id="cd.qdrant.io/v2.WaitStrategyName">WaitStrategyName
+(<code>string</code> alias)</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#cd.qdrant.io/v2.WaitStrategy">WaitStrategy</a>)
+</p>
+<p>WaitStrategyName is a strategy for waiting for resources to be ready.</p>
 <div class="admonition note">
 <p class="last">This page was automatically generated with <code>gen-crd-api-reference-docs</code></p>
 </div>

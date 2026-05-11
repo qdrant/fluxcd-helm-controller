@@ -52,11 +52,13 @@ type Kustomize struct {
 	Patches []kustomize.Patch `json:"patches,omitempty"`
 
 	// Strategic merge patches, defined as inline YAML objects.
+	//
 	// Deprecated: use Patches instead.
 	// +optional
 	PatchesStrategicMerge []apiextensionsv1.JSON `json:"patchesStrategicMerge,omitempty"`
 
 	// JSON 6902 patches, defined as inline YAML objects.
+	//
 	// Deprecated: use Patches instead.
 	// +optional
 	PatchesJSON6902 []kustomize.JSON6902Patch `json:"patchesJson6902,omitempty"`
@@ -1011,6 +1013,7 @@ type HelmReleaseStatus struct {
 
 	// LastAppliedRevision is the revision of the last successfully applied
 	// source.
+	//
 	// Deprecated: the revision can now be found in the History.
 	// +optional
 	LastAppliedRevision string `json:"lastAppliedRevision,omitempty"`
@@ -1028,11 +1031,13 @@ type HelmReleaseStatus struct {
 
 	// LastAttemptedValuesChecksum is the SHA1 checksum for the values of the last
 	// reconciliation attempt.
+	//
 	// Deprecated: Use LastAttemptedConfigDigest instead.
 	// +optional
 	LastAttemptedValuesChecksum string `json:"lastAttemptedValuesChecksum,omitempty"`
 
 	// LastReleaseRevision is the revision of the last successful Helm release.
+	//
 	// Deprecated: Use History instead.
 	// +optional
 	LastReleaseRevision int `json:"lastReleaseRevision,omitempty"`
@@ -1090,12 +1095,7 @@ const (
 
 // +genclient
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:shortName=qdranthr
-// +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description=""
-// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status",description=""
-// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message",description=""
-// +kubebuilder:deprecatedversion:warning="v2beta2 HelmRelease is deprecated, upgrade to v2"
+// +kubebuilder:skipversion
 
 // HelmRelease is the Schema for the helmreleases API
 type HelmRelease struct {
@@ -1180,10 +1180,10 @@ func (in HelmRelease) GetRequeueAfter() time.Duration {
 	return in.Spec.Interval.Duration
 }
 
-// GetValues unmarshals the raw values to a map[string]interface{} and returns
+// GetValues unmarshals the raw values to a map[string]any and returns
 // the result.
-func (in HelmRelease) GetValues() map[string]interface{} {
-	var values map[string]interface{}
+func (in HelmRelease) GetValues() map[string]any {
+	var values map[string]any
 	if in.Spec.Values != nil {
 		_ = yaml.Unmarshal(in.Spec.Values.Raw, &values)
 	}
@@ -1266,6 +1266,7 @@ func (in *HelmRelease) SetConditions(conditions []metav1.Condition) {
 }
 
 // GetStatusConditions returns a pointer to the Status.Conditions slice.
+//
 // Deprecated: use GetConditions instead.
 func (in *HelmRelease) GetStatusConditions() *[]metav1.Condition {
 	return &in.Status.Conditions

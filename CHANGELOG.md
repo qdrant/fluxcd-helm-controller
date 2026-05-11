@@ -1,10 +1,476 @@
 # Changelog
 
+## 1.5.4
+
+**Release date:** 2026-04-21
+
+This patch release fixes a post-renderer conflict between overlapping hooks
+and templates, and preserves line endings in `SplitManifests` for downstream
+YAML parsers. It also ensures force-replace is ignored when server-side apply
+is enabled.
+
+Fixes:
+- Ignore force replace when server-side apply is enabled
+  [#1456](https://github.com/fluxcd/helm-controller/pull/1456)
+- Fix post-renderer conflict of overlapping hooks and templates
+  [#1461](https://github.com/fluxcd/helm-controller/pull/1461)
+
+## 1.5.3
+
+**Release date:** 2026-03-16
+
+This patch release fixes templating errors for charts that include
+`---` in the content, e.g. YAML separators, embedded scripts, CAs
+inside ConfigMaps, etc. Some of the errors that could be encountered
+due to this issue are:
+
+- `invalid document separator: ---apiVersion: v1`
+- `wrong node kind`
+
+Fixes:
+- Fix multi-doc parser of `---` for post renderers
+  [#1442](https://github.com/fluxcd/helm-controller/pull/1442)
+
+## 1.5.2
+
+**Release date:** 2026-03-12
+
+This patch release fixes reconciliation queue behavior for source watch events
+while a HelmRelease is already reconciling the watched revision. It also comes
+with Helm 4.1.3, which fixes a Go templates bug where the YAML document separator
+`---` could be concatenated to `apiVersion` as `---apiVersion`, and introduces
+the `DefaultToRetryOnFailure` feature gate to improve the experience when
+`CancelHealthCheckOnNewRevision` is enabled by ensuring canceled HelmReleases
+do not get stuck when no retry strategy is configured.
+
+Fixes:
+- Fix enqueing the same revision while reconciling
+  [#1430](https://github.com/fluxcd/helm-controller/pull/1430)
+
+Improvements:
+- Introduce `DefaultToRetryOnFailure` feature gate
+  [#1431](https://github.com/fluxcd/helm-controller/pull/1431)
+- Update fluxcd/pkg dependencies
+  [#1436](https://github.com/fluxcd/helm-controller/pull/1436)
+
+## 1.5.1
+
+**Release date:** 2026-02-27
+
+This patch release fixes health check logic for StatefulSets during
+rolling updates when the Pods are Pending/Unschedulable.
+
+Fixes:
+- Fix health check logic for StatefulSets during rolling updates
+  [#1424](https://github.com/fluxcd/helm-controller/pull/1424)
+
+Improvements:
+- Add note about MTTR only for kstatus
+  [#1416](https://github.com/fluxcd/helm-controller/pull/1416)
+- Remove no longer needed workaround for Flux 2.8
+  [#1420](https://github.com/fluxcd/helm-controller/pull/1420)
+
+## 1.5.0
+
+**Release date:** 2026-02-20
+
+This minor release comes with Helm v4 support, server-side apply for
+Helm releases, and various bug fixes and improvements.
+
+⚠️ The `v2beta2` APIs were removed. Before upgrading the CRDs, Flux users
+must run [`flux migrate`](https://github.com/fluxcd/flux2/pull/5473) to
+migrate the cluster storage off `v2beta2`.
+
+### HelmRelease
+
+The controller now uses Helm v4, and, with this change, new default
+behaviors are being introduced (breaking changes) to keep Flux and
+Helm aligned:
+
+- Apply method is now defaulting to server-side apply for new HelmReleases.
+- Health checks now default to using kstatus for assessing readiness and
+failures of applied resources.
+
+Those defaults can be changed back to Helm v3's defaults by setting the
+feature gate `UseHelm3Defaults`. Alternatively, fine-tuning the apply
+and health check methods is also possible on a per-HelmRelease basis by
+using the following fields:
+
+- `.spec.install.serverSideApply` (boolean, default defined by `UseHelm3Defaults`)
+- `.spec.upgrade.serverSideApply` (`enabled`, `disabled` or `auto`, defaults to `auto`)
+- `.spec.rollback.serverSideApply` (`enabled`, `disabled` or `auto`, defaults to `auto`)
+- `.spec.waitStrategy.name` (`poller` or `legacy`, default defined by `UseHelm3Defaults`)
+
+Note that Helm persists the apply method in the release storage, hence
+why the `auto` value is an option for upgrade and rollback actions. When
+set to `auto`, the controller will reuse the apply method used in the last
+successful release revision as recorded in the Helm storage, defaulting
+to client-side apply. This means that existing HelmReleases will continue
+to use client-side apply until their `.spec` is updated with
+`.spec.{upgrade|rollback}.serverSideApply: enabled`.
+
+The `poller` health check strategy uses kstatus to check the status
+of applied resources, while the `legacy` strategy uses Helm v3's
+built-in health checking behavior.
+
+The controller now can be configured to cancel in-progress health checks when a new
+reconciliation request is received, reducing the mean time to recovery (MTTR) in case
+of failed deployments. This feature is enabled by the `CancelHealthCheckOnNewRevision`
+feature gate. Note that enabling this feature gate will not cancel apply operations,
+and will only cancel health checks for managed resources. Waiting for Helm hooks and
+tests will not be cancelled. Note also that this feature is only available with the
+`poller` health check strategy.
+
+Still on the health check subject, custom health checks via CEL expressions
+are now supported for HelmRelease via the `.spec.healthCheckExprs` field,
+similar to the Kustomization API. Please see the
+[CEL cheatsheet](https://fluxcd.io/flux/cheatsheets/cel-healthchecks/)
+for more information.
+
+The `--override-manager=<manager>` flag has been added for server-side apply drift
+detection and correction. This flag can be passed multiple times. Note that drift
+detection and correction in helm-controller is completely unrelated to Helm v4's
+server-side apply support, and was implemented long before Helm v4 was released.
+
+The `DirectSourceFetch` feature gate has been introduced for bypassing the cache
+when fetching source objects on reconciliations.
+
+For improved observability, inventory tracking has been added via
+`.status.inventory`. Hooks and tests are not tracked in this field.
+Only resources present in the Helm storage and CRDs are tracked.
+
+Also for improved observability, the controller now tracks the action (`install`,
+`upgrade`, `rollback`, `uninstall`, `uninstall-remediation`) in snapshots:
+`.status.history[].action`.
+
+### General updates
+
+In addition, the Kubernetes dependencies have been updated to v1.35.0,
+Kustomize has been updated to v5.8.1 and the controller is now built
+with Go 1.26.
+
+Fixes:
+- Fix state when configuration set back to current state following upgrade failure
+  [#1369](https://github.com/fluxcd/helm-controller/pull/1369)
+- Fix waiting and erroring out on garbage-collected Jobs
+  [#1402](https://github.com/fluxcd/helm-controller/pull/1402)
+- Fix controller not reconciling conditions for in-sync release
+  [#1411](https://github.com/fluxcd/helm-controller/pull/1411)
+- Fix postRenderers not causing new upgrade when applied during ongoing upgrade
+  [#1412](https://github.com/fluxcd/helm-controller/pull/1412)
+
+Improvements:
+- Upgrade Helm to v4
+  [#1383](https://github.com/fluxcd/helm-controller/pull/1383)
+  [#1403](https://github.com/fluxcd/helm-controller/pull/1403)
+- Add ServerSideApply field to HelmRelease API
+  [#1384](https://github.com/fluxcd/helm-controller/pull/1384)
+- Add `.status.inventory` to track managed objects
+  [#1385](https://github.com/fluxcd/helm-controller/pull/1385)
+- Add support for custom health checks via CEL expressions
+  [#1389](https://github.com/fluxcd/helm-controller/pull/1389)
+- Add `--override-manager` flag for server-side apply drift detection
+  [#1365](https://github.com/fluxcd/helm-controller/pull/1365)
+- Reduce the mean time to recovery (MTTR) in case of failed deployments
+  [#1392](https://github.com/fluxcd/helm-controller/pull/1392)
+- Track action in snapshots
+  [#1399](https://github.com/fluxcd/helm-controller/pull/1399)
+- Add `DirectSourceFetch` feature gate to bypass cache for source objects
+  [#1407](https://github.com/fluxcd/helm-controller/pull/1407)
+- Remove deprecated APIs in group `helm.toolkit.fluxcd.io/v2beta2`
+  [#1404](https://github.com/fluxcd/helm-controller/pull/1404)
+- Remove adoption of resources in old API versions
+  [#1396](https://github.com/fluxcd/helm-controller/pull/1396)
+- Remove duplicated struct json tag
+  [#1377](https://github.com/fluxcd/helm-controller/pull/1377)
+- Various dependency updates
+  [#1395](https://github.com/fluxcd/helm-controller/pull/1395)
+  [#1406](https://github.com/fluxcd/helm-controller/pull/1406)
+  [#1408](https://github.com/fluxcd/helm-controller/pull/1408)
+  [#1410](https://github.com/fluxcd/helm-controller/pull/1410)
+
+## 1.4.5
+
+**Release date:** 2025-11-27
+
+This patch release fixes the HelmRelease `.status.history`
+filling up etcd when the `RetryOnFailure` strategy is used.
+
+Fixes:
+- Fix history truncation logic for RetryOnFailure
+  [#1360](https://github.com/fluxcd/helm-controller/pull/1360)
+
+## 1.4.4
+
+**Release date:** 2025-11-19
+
+This patch release fixes the error `no URLLoader registered` and
+Azure Workload Identity in Azure China Cloud. It also adds a
+feature gate to disable the ConfigMap and Secret watchers,
+`DisableConfigWatchers`.
+
+Improvements:
+- Add feature gate for disabling config watchers
+  [#1353](https://github.com/fluxcd/helm-controller/pull/1353)
+- Upgrade k8s to 1.34.2, c-r to 0.22.4 and helm to 3.19.2
+  [#1350](https://github.com/fluxcd/helm-controller/pull/1350)
+- Upgrade Helm to 3.19.1
+  [#1346](https://github.com/fluxcd/helm-controller/pull/1346)
+
+## 1.4.3
+
+**Release date:** 2025-10-28
+
+This patch release comes with various fixes and improvements.
+
+Fixes:
+- Fix status reporting for RetryOnFailure strategy
+  [#1338](https://github.com/fluxcd/helm-controller/pull/1338)
+
+Improvements:
+- Allow fetching charts from a local source-watcher
+  [#1341](https://github.com/fluxcd/helm-controller/pull/1341)
+
+## 1.4.2
+
+**Release date:** 2025-10-08
+
+This patch release comes with various dependency updates.
+
+The controller is now built with Go 1.25.2 which includes
+fixes for vulnerabilities in the Go stdlib:
+[CVE-2025-58183](https://github.com/golang/go/issues/75677),
+[CVE-2025-58188](https://github.com/golang/go/issues/75675)
+and many others. The full list of security fixes can be found
+[here](https://groups.google.com/g/golang-announce/c/4Emdl2iQ_bI/m/qZN5nc-mBgAJ).
+
+Improvements:
+- Update dependencies to Kubernetes v1.34.1 and Go 1.25.2
+  [#1329](https://github.com/fluxcd/helm-controller/pull/1329)
+
+## 1.4.1
+
+**Release date:** 2025-10-06
+
+This patch release fixes the controller setting the `Ready`
+condition to `Unknown` redundantly during reconciliation.
+
+Fixes:
+- Remove redundant Ready condition setter
+  [#1323](https://github.com/fluxcd/helm-controller/pull/1323)
+- Fix docs example for kubeconfig workload identity
+  [#1315](https://github.com/fluxcd/helm-controller/pull/1315)
+
+## 1.4.0
+
+**Release date:** 2025-09-25
+
+This minor release comes with various bug fixes and improvements.
+
+⚠️ The `v2beta1` APIs were removed. Before upgrading the CRDs, Flux users
+must run [`flux migrate`](https://github.com/fluxcd/flux2/pull/5473) to
+migrate the cluster storage off `v2beta1`.
+
+The controller now supports ExternalArtifact Helm chart sources
+under the feature gate `ExternalArtifact`.
+
+A new `RetryOnFailure` strategy has been added for automatic
+retries on Helm release failures.
+
+Dependencies can now be evaluated using CEL expressions via the new
+`readyExpr` field, providing more flexible and powerful dependency
+readiness checks.
+
+Support for workload identity authentication has been added for remote clusters.
+This is supported both at the controller and object levels. For object-level,
+enable the feature gate `ObjectLevelWorkloadIdentity`.
+
+In addition, the Kubernetes dependencies have been updated to v1.34, Helm has
+been updated to v3.19 and various other controller dependencies have been
+updated to their latest version. The controller is now built with Go 1.25.
+
+Fixes:
+- Fix continuous drift due to unstable hashing of values
+  [#1267](https://github.com/fluxcd/helm-controller/pull/1267)
+- Fix watch index conflict between HelmChart and OCIRepository kinds
+  [#1266](https://github.com/fluxcd/helm-controller/pull/1266)
+- Fix requeue interval for SourceNotReady
+  [#1276](https://github.com/fluxcd/helm-controller/pull/1276)
+
+Improvements:
+- [RFC-0010] Add workload identity auth for remote clusters
+  [#1249](https://github.com/fluxcd/helm-controller/pull/1249)
+- [RFC-0010] Support all Azure clouds for remote clusters
+  [#1262](https://github.com/fluxcd/helm-controller/pull/1262)
+- [RFC-0010] Add multi-tenancy lockdown for kubeconfig
+  [#1284](https://github.com/fluxcd/helm-controller/pull/1284)
+- [RFC-0010] Add object-level configuration validation
+  [#1286](https://github.com/fluxcd/helm-controller/pull/1286)
+- [RFC-0012] Add ExternalArtifact feature gate and reconciliation support
+  [#1293](https://github.com/fluxcd/helm-controller/pull/1293)
+- [RFC-0012] Add support for ExternalArtifact revision with digest
+  [#1296](https://github.com/fluxcd/helm-controller/pull/1296)
+- Remove deprecated `helm.toolkit.fluxcd.io/v2beta1` API group
+  [#1280](https://github.com/fluxcd/helm-controller/pull/1280) 
+- Add RetryOnFailure lifecycle management strategy
+  [#1281](https://github.com/fluxcd/helm-controller/pull/1281)
+- Add CEL expressions for dependency readiness checks with `readyExpr` field
+  [#1271](https://github.com/fluxcd/helm-controller/pull/1271)
+- Add label selector for watching ConfigMaps and Secrets
+  [#1258](https://github.com/fluxcd/helm-controller/pull/1258)
+- Add common labels and annotations support with Kustomize post-renderer
+  [#1223](https://github.com/fluxcd/helm-controller/pull/1223)
+- Record last Helm release action duration in status
+  [#1282](https://github.com/fluxcd/helm-controller/pull/1282)
+- CI improvements with fluxcd/gha-workflows
+  [#1305](https://github.com/fluxcd/helm-controller/pull/1305)
+  [#1307](https://github.com/fluxcd/helm-controller/pull/1307)
+- Various dependency updates
+  [#1304](https://github.com/fluxcd/helm-controller/pull/1304)
+  [#1247](https://github.com/fluxcd/helm-controller/pull/1247)
+  [#1297](https://github.com/fluxcd/helm-controller/pull/1297)
+
+## 1.3.0
+
+**Release date:** 2025-05-28
+
+This minor release comes with various bug fixes and improvements.
+
+The controller now supports the `DisableChartDigestTracking` feature gate,
+which allows disabling appending the digest of OCI Helm charts to the
+chart version. This is useful for charts that do not follow Helm's
+recommendation of using the app version instead of the chart version
+as a label in the manifests.
+
+In addition, the Kubernetes dependencies have been updated to v1.33, Helm has
+been updated to v3.17.3 and various other controller dependencies have been
+updated to their latest version. The controller is now built with Go 1.24.
+
+Fixes:
+- Fix returning wrong error value in Kubernetes HTTP client
+  [#1188](https://github.com/fluxcd/helm-controller/pull/1188)
+
+Improvements:
+- Add `DisableChartDigestTracking` feature gate
+  [#1212](https://github.com/fluxcd/helm-controller/pull/1212)
+- Various dependency updates
+  [#1227](https://github.com/fluxcd/helm-controller/pull/1227)
+  [#1221](https://github.com/fluxcd/helm-controller/pull/1221)
+  [#1220](https://github.com/fluxcd/helm-controller/pull/1220)
+  [#1218](https://github.com/fluxcd/helm-controller/pull/1218)
+  [#1206](https://github.com/fluxcd/helm-controller/pull/1206)
+  [#1209](https://github.com/fluxcd/helm-controller/pull/1209)
+  [#1204](https://github.com/fluxcd/helm-controller/pull/1204)
+
+## 1.2.0
+
+**Release date:** 2025-02-19
+
+This minor release comes with various bug fixes and improvements.
+
+In addition, the Kubernetes dependencies have been updated to v1.32.1, Helm has
+been updated to v3.17.1 and various other controller dependencies have been
+updated to their latest version.
+
+Fixes:
+- Replace _ with + when verifying the chart version matches the OCI artifact tag
+  [#1102](https://github.com/fluxcd/helm-controller/pull/1102)
+- fix: handle "leader changed" errors
+  [#1084](https://github.com/fluxcd/helm-controller/pull/1084)
+- Make `ValuesReference` an alias for backwards compat
+  [#1126](https://github.com/fluxcd/helm-controller/pull/1126)
+- Fix install and upgrade applying subchart CRDs when condition is false
+  [#1123](https://github.com/fluxcd/helm-controller/pull/1123)
+- fix: use HelmRelease max history for rollback remediation
+  [#1169](https://github.com/fluxcd/helm-controller/pull/1169)
+
+Improvements:
+- Refactor values composition to use pkg/chartutil
+  [#1122](https://github.com/fluxcd/helm-controller/pull/1122)
+- docs: Rendering the final Values locally
+  [#1127](https://github.com/fluxcd/helm-controller/pull/1127)
+- Add disableTakeOwnership to Helm install/upgrade actions
+  [#1140](https://github.com/fluxcd/helm-controller/pull/1140)
+- Various dependency updates
+  [#1103](https://github.com/fluxcd/helm-controller/pull/1103)
+  [#1121](https://github.com/fluxcd/helm-controller/pull/1121)
+  [#1129](https://github.com/fluxcd/helm-controller/pull/1129)
+  [#1142](https://github.com/fluxcd/helm-controller/pull/1142)
+  [#1160](https://github.com/fluxcd/helm-controller/pull/1160)
+  [#1158](https://github.com/fluxcd/helm-controller/pull/1158)
+  [#1165](https://github.com/fluxcd/helm-controller/pull/1165)
+  [#1168](https://github.com/fluxcd/helm-controller/pull/1168)
+  [#1171](https://github.com/fluxcd/helm-controller/pull/1171)
+  [#1167](https://github.com/fluxcd/helm-controller/pull/1167)
+  [#1173](https://github.com/fluxcd/helm-controller/pull/1173)
+  [#1170](https://github.com/fluxcd/helm-controller/pull/1170)
+
+## 1.1.0
+
+**Release date:** 2024-09-26
+
+This minor release comes with various bug fixes and improvements.
+
+The chart [values schema](https://helm.sh/docs/topics/charts/#schema-files)
+validation can now be disabled for install and upgrade actions by setting
+`disableSchemaValidation` under `.spec.install` and `.spec.upgrade` of a
+`HelmRelease` object.
+
+HelmReleases that result in failure during uninstall will now be retried until
+the uninstall succeeds without any error. See [handling failed
+uninstall](https://fluxcd.io/flux/components/helm/helmreleases/#handling-failed-uninstall)
+docs for various remediations based on the cause of the failure.
+
+helm-controller in [sharded
+deployment](https://fluxcd.io/flux/installation/configuration/sharding/)
+configuration now supports cross-shard dependency check. This allows a
+HelmRelease to depend on other HelmReleases managed by different controller
+shards.
+
+In addition, the Kubernetes dependencies have been updated to v1.31.1, Helm has
+been updated to v3.16.1 and various other controller dependencies have been
+updated to their latest version. The controller is now built with Go 1.23.
+
+Fixes:
+- fix: remove digest check to never ignore helm uninstall errors
+  [#1024](https://github.com/fluxcd/helm-controller/pull/1024)
+- Allow overwriting inline values with targetPath
+  [#1060](https://github.com/fluxcd/helm-controller/pull/1060)
+- Fix incorrect use of format strings with the conditions package
+  [#1025](https://github.com/fluxcd/helm-controller/pull/1025)
+- Re-enable logging json patch on StatusDrifted
+  [#1010](https://github.com/fluxcd/helm-controller/pull/1010)
+- Ignore 'v' version prefix in OCI artifact and Helm chart
+  [#990](https://github.com/fluxcd/helm-controller/pull/990)
+- doc: fix HelmRelease default value for .spec.upgrade.crds
+  [#986](https://github.com/fluxcd/helm-controller/pull/986)
+
+Improvements:
+- Allow cross-shard dependency check
+  [#1070](https://github.com/fluxcd/helm-controller/pull/1070)
+- Add disableSchemaValidation to Helm install/upgrade actions
+  [#1068](https://github.com/fluxcd/helm-controller/pull/1068)
+- Update Helm to v3.16.1 and enable the adoption of existing resources
+  [#1062](https://github.com/fluxcd/helm-controller/pull/1062)
+- Build with Go 1.23
+  [#1049](https://github.com/fluxcd/helm-controller/pull/1049)
+- Various dependency updates
+  [#987](https://github.com/fluxcd/helm-controller/pull/987)
+  [#991](https://github.com/fluxcd/helm-controller/pull/991)
+  [#994](https://github.com/fluxcd/helm-controller/pull/994)
+  [#1004](https://github.com/fluxcd/helm-controller/pull/1004)
+  [#1046](https://github.com/fluxcd/helm-controller/pull/1046)
+  [#1048](https://github.com/fluxcd/helm-controller/pull/1048)
+  [#1052](https://github.com/fluxcd/helm-controller/pull/1052)
+  [#1064](https://github.com/fluxcd/helm-controller/pull/1064)
+  [#1072](https://github.com/fluxcd/helm-controller/pull/1072)
+  [#1073](https://github.com/fluxcd/helm-controller/pull/1073)
+
 ## 1.0.1
 
 **Release date:** 2024-05-10
 
-This prerelease fixes a backwards compatibility issue that could occur when trying
+This patch release fixes a backwards compatibility issue that could occur when trying
 to move from the `v2beta1` to `v2` API while specifing `.spec.chartRef`.
 
 Fixes:

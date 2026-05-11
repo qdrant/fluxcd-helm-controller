@@ -21,11 +21,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/fluxcd/pkg/apis/meta"
-	"github.com/fluxcd/pkg/runtime/conditions"
 	"github.com/fluxcd/pkg/ssa/jsondiff"
-	"helm.sh/helm/v3/pkg/kube"
-	helmrelease "helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v4/pkg/kube"
+	helmreleasecommon "helm.sh/helm/v4/pkg/release/common"
+	helmrelease "helm.sh/helm/v4/pkg/release/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/fluxcd/helm-controller/internal/action"
@@ -89,7 +88,7 @@ type ReleaseState struct {
 // DetermineReleaseState determines the state of the Helm release as compared
 // to the v2.HelmRelease object. It returns a ReleaseState that indicates
 // the status of the release, and an error if the state could not be determined.
-func DetermineReleaseState(ctx context.Context, cfg *action.ConfigFactory, req *Request) (ReleaseState, error) {
+func DetermineReleaseState(ctx context.Context, cfg *action.ConfigFactory, req *Request, disallowedFieldManagers []string) (ReleaseState, error) {
 	rls, err := action.LastRelease(cfg.Build(nil), req.Object.GetReleaseName())
 	if err != nil {
 		if errors.Is(err, action.ErrReleaseNotFound) {
@@ -106,7 +105,7 @@ func DetermineReleaseState(ctx context.Context, cfg *action.ConfigFactory, req *
 
 	// Confirm we have a release object to compare against.
 	if req.Object.Status.History.Len() == 0 {
-		if rls.Info.Status == helmrelease.StatusUninstalled {
+		if rls.Info.Status == helmreleasecommon.StatusUninstalled {
 			return ReleaseState{Status: ReleaseStatusAbsent, Reason: "found uninstalled release in storage"}, nil
 		}
 		return ReleaseState{Status: ReleaseStatusUnmanaged, Reason: "found existing release in storage"}, err
@@ -130,11 +129,11 @@ func DetermineReleaseState(ctx context.Context, cfg *action.ConfigFactory, req *
 	// Further determine the state of the release based on the Helm release
 	// status, which can now be considered reliable.
 	switch rls.Info.Status {
-	case helmrelease.StatusFailed:
+	case helmreleasecommon.StatusFailed:
 		return ReleaseState{Status: ReleaseStatusFailed}, nil
-	case helmrelease.StatusUninstalled:
+	case helmreleasecommon.StatusUninstalled:
 		return ReleaseState{Status: ReleaseStatusAbsent, Reason: "found uninstalled release in storage"}, nil
-	case helmrelease.StatusDeployed:
+	case helmreleasecommon.StatusDeployed:
 		// Verify the release is in sync with the desired configuration.
 		if err = action.VerifyRelease(rls, cur, req.Chart.Metadata, req.Values); err != nil {
 			switch err {
@@ -145,21 +144,31 @@ func DetermineReleaseState(ctx context.Context, cfg *action.ConfigFactory, req *
 			}
 		}
 
-		// Verify if postrender digest has changed if config has not been
-		// processed. For the processed or partially processed generation, the
-		// updated observation will only be reflected at the end of a successful
-		// reconciliation.  Comparing here would result the reconciliation to
-		// get stuck in this check due to a mismatch forever.  The value can't
-		// change without a new generation. Hence, compare the observed digest
-		// for new generations only.
-		ready := conditions.Get(req.Object, meta.ReadyCondition)
-		if ready != nil && ready.ObservedGeneration != req.Object.Generation {
+		// Verify if postrender digest or common metadata digest has changed
+		// for new generations only. The observed digests are updated after
+		// each successful release action, so comparing here will not cause
+		// an infinite loop within the same reconciliation.
+		//
+		// We use the top-level status.observedGeneration rather than the
+		// Ready condition's ObservedGeneration, because the latter can be
+		// inadvertently advanced by the patch helper's conflict resolution
+		// (patchStatusConditions re-fetches the object from the API server,
+		// and conditions.Set always sets ObservedGeneration to the latest
+		// metadata.generation).
+		if req.Object.Status.ObservedGeneration != req.Object.Generation {
 			var postrenderersDigest string
 			if req.Object.Spec.PostRenderers != nil {
 				postrenderersDigest = postrender.Digest(digest.Canonical, req.Object.Spec.PostRenderers).String()
 			}
 			if postrenderersDigest != req.Object.Status.ObservedPostRenderersDigest {
 				return ReleaseState{Status: ReleaseStatusOutOfSync, Reason: "postrenderers digest has changed"}, nil
+			}
+			var commonMetadataDigest string
+			if req.Object.Spec.CommonMetadata != nil {
+				commonMetadataDigest = postrender.CommonMetadataDigest(digest.Canonical, req.Object.Spec.CommonMetadata).String()
+			}
+			if commonMetadataDigest != req.Object.Status.ObservedCommonMetadataDigest {
+				return ReleaseState{Status: ReleaseStatusOutOfSync, Reason: "common metadata digest has changed"}, nil
 			}
 		}
 
@@ -181,7 +190,7 @@ func DetermineReleaseState(ctx context.Context, cfg *action.ConfigFactory, req *
 
 		// Confirm the cluster state matches the desired config.
 		if diffOpts := req.Object.GetDriftDetection(); diffOpts.MustDetectChanges() {
-			diffSet, err := action.Diff(ctx, cfg.Build(nil), rls, kube.ManagedFieldsManager, req.Object.GetDriftDetection().Ignore...)
+			diffSet, err := action.Diff(ctx, cfg.Build(nil), rls, kube.ManagedFieldsManager, disallowedFieldManagers, req.Object.GetDriftDetection().Ignore...)
 			hasChanges := diffSet.HasChanges()
 			if err != nil {
 				if !hasChanges {

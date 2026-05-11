@@ -1097,11 +1097,7 @@ const (
 // +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName=qdranthr
-// +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description=""
-// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status",description=""
-// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message",description=""
-// +kubebuilder:deprecatedversion:warning="v2beta1 HelmRelease is deprecated, upgrade to v2"
+// +kubebuilder:skipversion
 
 // HelmRelease is the Schema for the helmreleases API
 type HelmRelease struct {
@@ -1119,10 +1115,10 @@ func (in HelmRelease) GetRequeueAfter() time.Duration {
 	return in.Spec.Interval.Duration
 }
 
-// GetValues unmarshals the raw values to a map[string]interface{} and returns
+// GetValues unmarshals the raw values to a map[string]any and returns
 // the result.
-func (in HelmRelease) GetValues() map[string]interface{} {
-	var values map[string]interface{}
+func (in HelmRelease) GetValues() map[string]any {
+	var values map[string]any
 	if in.Spec.Values != nil {
 		_ = json.Unmarshal(in.Spec.Values.Raw, &values)
 	}
@@ -1205,6 +1201,7 @@ func (in *HelmRelease) SetConditions(conditions []metav1.Condition) {
 }
 
 // GetStatusConditions returns a pointer to the Status.Conditions slice.
+//
 // Deprecated: use GetConditions instead.
 func (in *HelmRelease) GetStatusConditions() *[]metav1.Condition {
 	return &in.Status.Conditions

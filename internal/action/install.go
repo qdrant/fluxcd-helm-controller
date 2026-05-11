@@ -20,10 +20,11 @@ import (
 	"context"
 	"fmt"
 
-	helmaction "helm.sh/helm/v3/pkg/action"
-	helmchart "helm.sh/helm/v3/pkg/chart"
-	helmchartutil "helm.sh/helm/v3/pkg/chartutil"
-	helmrelease "helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v4/pkg/action"
+	helmaction "helm.sh/helm/v4/pkg/action"
+	helmchartutil "helm.sh/helm/v4/pkg/chart/common"
+	helmchart "helm.sh/helm/v4/pkg/chart/v2"
+	helmrelease "helm.sh/helm/v4/pkg/release/v1"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/features"
@@ -50,28 +51,50 @@ type InstallOption func(action *helmaction.Install)
 func Install(ctx context.Context, config *helmaction.Configuration, obj *v2.HelmRelease,
 	chrt *helmchart.Chart, vals helmchartutil.Values, opts ...InstallOption) (*helmrelease.Release, error) {
 	install := newInstall(config, obj, opts)
+	install.ForceConflicts = install.ServerSideApply // We always force conflicts on server-side apply.
 
 	policy, err := crdPolicyOrDefault(obj.GetInstall().CRDs)
 	if err != nil {
 		return nil, err
 	}
-	if err := applyCRDs(config, policy, chrt, setOriginVisitor(v2.GroupVersion.Group, obj.Namespace, obj.Name)); err != nil {
+	if err := applyCRDs(config, policy, chrt, vals, install.ServerSideApply,
+		install.WaitStrategy, install.WaitOptions,
+		setOriginVisitor(v2.GroupVersion.Group, obj.Namespace, obj.Name)); err != nil {
 		return nil, fmt.Errorf("failed to apply CustomResourceDefinitions: %w", err)
 	}
 
-	return install.RunWithContext(ctx, chrt, vals.AsMap())
+	rlsr, err := install.RunWithContext(ctx, chrt, vals.AsMap())
+	if err != nil {
+		return nil, err
+	}
+	rlsrTyped, ok := rlsr.(*helmrelease.Release)
+	if !ok {
+		return nil, fmt.Errorf("only the Chart API v2 is supported")
+	}
+	return rlsrTyped, err
 }
 
 func newInstall(config *helmaction.Configuration, obj *v2.HelmRelease, opts []InstallOption) *helmaction.Install {
 	install := helmaction.NewInstall(config)
+	switch {
+	case UseHelm3Defaults:
+		install.ServerSideApply = false
+	default:
+		install.ServerSideApply = true
+	}
+	if ssa := obj.GetInstall().ServerSideApply; ssa != nil {
+		install.ServerSideApply = *ssa
+	}
 
 	install.ReleaseName = release.ShortenName(obj.GetReleaseName())
 	install.Namespace = obj.GetReleaseNamespace()
 	install.Timeout = obj.GetInstall().GetTimeout(obj.GetTimeout()).Duration
-	install.Wait = !obj.GetInstall().DisableWait
+	install.TakeOwnership = !obj.GetInstall().DisableTakeOwnership
+	install.WaitStrategy = getWaitStrategy(obj.GetWaitStrategy(), obj.GetInstall())
 	install.WaitForJobs = !obj.GetInstall().DisableWaitForJobs
 	install.DisableHooks = obj.GetInstall().DisableHooks
 	install.DisableOpenAPIValidation = obj.GetInstall().DisableOpenAPIValidation
+	install.SkipSchemaValidation = obj.GetInstall().DisableSchemaValidation
 	install.Replace = obj.GetInstall().Replace
 	install.Devel = true
 	install.SkipCRDs = true
@@ -86,6 +109,7 @@ func newInstall(config *helmaction.Configuration, obj *v2.HelmRelease, opts []In
 	}
 
 	install.PostRenderer = postrender.BuildPostRenderers(obj)
+	install.PostRenderStrategy = action.PostRenderStrategyNoHooks
 
 	for _, opt := range opts {
 		opt(install)
