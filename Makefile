@@ -158,6 +158,7 @@ download-crd-deps: $(SOURCE_CRD_VER) $(HELMCHART_SOURCE_CRD) $(OCIREPO_CRD) $(EA
 # Delete the downloaded CRD dependencies.
 cleanup-crd-deps:
 	rm -f $(HELMCHART_SOURCE_CRD)
+	rm -f $(CRD_DEP_ROOT)/source.toolkit.fluxcd.io_*.yaml
 
 # Find or download controller-gen
 CONTROLLER_GEN = $(GOBIN)/controller-gen
