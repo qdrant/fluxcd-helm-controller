@@ -40,6 +40,9 @@ SOURCE_CRD_VER = $(CRD_DEP_ROOT)/.src-crd-$(SOURCE_VER)
 HELMCHART_SOURCE_CRD ?= $(CRD_DEP_ROOT)/source.toolkit.fluxcd.io_helmcharts.yaml
 OCIREPO_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_ocirepositories.yaml
 EA_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_externalartifacts.yaml
+GITREPO_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_gitrepositories.yaml
+HELMREPO_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_helmrepositories.yaml
+BUCKET_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_buckets.yaml
 
 # API (doc) generation utilities
 CONTROLLER_GEN_VERSION ?= v0.19.0
@@ -152,8 +155,17 @@ $(OCIREPO_CRD):
 $(EA_CRD):
 	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_externalartifacts.yaml -o $(EA_CRD)
 
+$(GITREPO_CRD):
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_gitrepositories.yaml -o $(GITREPO_CRD)
+
+$(HELMREPO_CRD):
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_helmrepositories.yaml -o $(HELMREPO_CRD)
+
+$(BUCKET_CRD):
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_buckets.yaml -o $(BUCKET_CRD)
+
 # Download the CRDs the controller depends on
-download-crd-deps: $(SOURCE_CRD_VER) $(HELMCHART_SOURCE_CRD) $(OCIREPO_CRD) $(EA_CRD)
+download-crd-deps: $(SOURCE_CRD_VER) $(HELMCHART_SOURCE_CRD) $(OCIREPO_CRD) $(EA_CRD) $(GITREPO_CRD) $(HELMREPO_CRD) $(BUCKET_CRD)
 
 # Delete the downloaded CRD dependencies.
 cleanup-crd-deps:
