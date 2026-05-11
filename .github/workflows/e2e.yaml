@@ -28,7 +28,10 @@ jobs:
       - name: Load test image
         run: kind load docker-image test/helm-controller:latest
       - name: Install CRDs
-        run: make install
+        run: |
+          make install
+          make download-crd-deps
+          kubectl apply -f build/config/crd/bases/
       - name: Run default status test
         run: |
           kubectl apply -f config/testdata/status-defaults
