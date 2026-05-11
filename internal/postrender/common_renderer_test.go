@@ -60,9 +60,9 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    existing: label
     cd.qdrant.io/name: name
     cd.qdrant.io/namespace: namespace
+    existing: label
   name: service-with-labels
 `,
 		},
