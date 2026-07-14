@@ -55,7 +55,7 @@ func Upgrade(ctx context.Context, config *helmaction.Configuration, obj *v2.Helm
 	if err != nil {
 		return nil, err
 	}
-	if err := applyCRDs(config, policy, chrt, setOriginVisitor(v2.GroupVersion.Group, obj.Namespace, obj.Name)); err != nil {
+	if err := applyCRDs(config, policy, chrt, vals, setOriginVisitor(v2.GroupVersion.Group, obj.Namespace, obj.Name)); err != nil {
 		return nil, fmt.Errorf("failed to apply CustomResourceDefinitions: %w", err)
 	}
 
@@ -69,10 +69,12 @@ func newUpgrade(config *helmaction.Configuration, obj *v2.HelmRelease, opts []Up
 	upgrade.ReuseValues = obj.GetUpgrade().PreserveValues
 	upgrade.MaxHistory = obj.GetMaxHistory()
 	upgrade.Timeout = obj.GetUpgrade().GetTimeout(obj.GetTimeout()).Duration
+	upgrade.TakeOwnership = !obj.GetUpgrade().DisableTakeOwnership
 	upgrade.Wait = !obj.GetUpgrade().DisableWait
 	upgrade.WaitForJobs = !obj.GetUpgrade().DisableWaitForJobs
 	upgrade.DisableHooks = obj.GetUpgrade().DisableHooks
 	upgrade.DisableOpenAPIValidation = obj.GetUpgrade().DisableOpenAPIValidation
+	upgrade.SkipSchemaValidation = obj.GetUpgrade().DisableSchemaValidation
 	upgrade.Force = obj.GetUpgrade().Force
 	upgrade.CleanupOnFail = obj.GetUpgrade().CleanupOnFail
 	upgrade.Devel = true

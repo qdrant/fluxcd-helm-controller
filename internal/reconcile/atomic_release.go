@@ -58,6 +58,11 @@ var (
 	// attempts for the provided release config.
 	ErrExceededMaxRetries = errors.New("exceeded maximum retries")
 
+	// ErrRetryAfterInterval is returned when the action strategy is RetryOnFailure
+	// and the current AtomicRelease has already reconciled at least one action,
+	// in which case the action must be retried after the configured retry interval.
+	ErrRetryAfterInterval = errors.New("retry after interval")
+
 	// ErrMustRequeue is returned when the caller must requeue the object
 	// to continue the reconciliation process.
 	ErrMustRequeue = errors.New("must requeue")
@@ -190,7 +195,9 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 			}
 
 			// Determine the next action to run based on the current state.
-			log.V(logger.DebugLevel).Info("determining next Helm action based on current state")
+			log.V(logger.DebugLevel).Info(
+				fmt.Sprintf("determining next Helm action based on state: '%s' reason '%s'", state.Status, state.Reason),
+			)
 			if next, err = r.actionForState(ctx, req, state); err != nil {
 				if errors.Is(err, ErrExceededMaxRetries) {
 					conditions.MarkStalled(req.Object, "RetriesExceeded", "Failed to %s after %d attempt(s)",
@@ -206,6 +213,7 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 
 			// If there is no next action, we are done.
 			if next == nil {
+				log.V(logger.DebugLevel).Info("no further action to take, atomic release completed")
 				conditions.Delete(req.Object, meta.ReconcilingCondition)
 
 				// Always summarize; this ensures we restore transient errors
@@ -219,6 +227,11 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 						// Update the post-renderers digest if the post-renderers exist.
 						req.Object.Status.ObservedPostRenderersDigest = postrender.Digest(digest.Canonical, req.Object.Spec.PostRenderers).String()
 					}
+					req.Object.Status.ObservedCommonMetadataDigest = ""
+					if req.Object.Spec.CommonMetadata != nil {
+						// Update the common-metadata digest if common-metadata exist.
+						req.Object.Status.ObservedCommonMetadataDigest = postrender.CommonMetadataDigest(digest.Canonical, req.Object.Spec.CommonMetadata).String()
+					}
 				}
 
 				return nil
@@ -229,6 +242,11 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 				log.V(logger.DebugLevel).Info(
 					fmt.Sprintf("instructed to stop before running %s action reconciler %s", next.Type(), next.Name()),
 				)
+
+				if retry := req.Object.GetActiveRetry(); retry != nil {
+					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "retrying after %s", retry.GetRetryInterval().String())
+					return ErrRetryAfterInterval
+				}
 
 				if remediation := req.Object.GetActiveRemediation(); remediation == nil || !remediation.RetriesExhausted(req.Object) {
 					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "%s", conditions.GetMessage(req.Object, meta.ReadyCondition))
@@ -261,6 +279,16 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 			// Run the action sub-reconciler.
 			log.Info(fmt.Sprintf("running '%s' action with timeout of %s", next.Name(), timeoutForAction(next, req.Object).String()))
 			if err = next.Reconcile(ctx, req); err != nil {
+				log.V(logger.DebugLevel).Info(
+					fmt.Sprintf("action reconciler %s of type %s returned error: %s", next.Name(), next.Type(), err),
+				)
+
+				if retry := req.Object.GetActiveRetry(); retry != nil {
+					log.Error(err, fmt.Sprintf("failed to run '%s' action", next.Name()))
+					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "retrying after %s", retry.GetRetryInterval().String())
+					return ErrRetryAfterInterval
+				}
+
 				if conditions.IsReady(req.Object) {
 					conditions.MarkFalse(req.Object, meta.ReadyCondition, "ReconcileError", "%s", err)
 				}
@@ -273,21 +301,21 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 					"instructed to stop after running %s action reconciler %s", next.Type(), next.Name()),
 				)
 
+				if retry := req.Object.GetActiveRetry(); retry != nil {
+					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "retrying after %s", retry.GetRetryInterval().String())
+					return ErrRetryAfterInterval
+				}
+
 				remediation := req.Object.GetActiveRemediation()
 				if remediation == nil || !remediation.RetriesExhausted(req.Object) {
 					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "%s", conditions.GetMessage(req.Object, meta.ReadyCondition))
 					return ErrMustRequeue
 				}
-				// Check if retries have exhausted after remediation for early
-				// stall condition detection.
-				if remediation != nil && remediation.RetriesExhausted(req.Object) {
-					conditions.MarkStalled(req.Object, "RetriesExceeded", "Failed to %s after %d attempt(s)",
-						req.Object.Status.LastAttemptedReleaseAction, req.Object.GetActiveRemediation().GetFailureCount(req.Object))
-					return ErrExceededMaxRetries
-				}
 
-				conditions.Delete(req.Object, meta.ReconcilingCondition)
-				return nil
+				// Retries have exhausted after remediation for early stall condition detection.
+				conditions.MarkStalled(req.Object, "RetriesExceeded", "Failed to %s after %d attempt(s)",
+					req.Object.Status.LastAttemptedReleaseAction, req.Object.GetActiveRemediation().GetFailureCount(req.Object))
+				return ErrExceededMaxRetries
 			}
 
 			// Append the type to the set of action types we have performed.
@@ -310,21 +338,25 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 	// end up running a Helm upgrade (due to e.g. ReleaseStatusUnmanaged) and
 	// then forcing an upgrade (due to the release now being in
 	// ReleaseStatusInSync with a yet unhandled force request).
-	forceRequested := v2.ShouldHandleForceRequest(req.Object)
+	forceRequested := meta.ShouldHandleForceRequest(req.Object)
 
 	switch state.Status {
 	case ReleaseStatusInSync:
 		log.Info("release in-sync with desired state")
 
-		// Remove all history up to the previous release action.
-		// We need to continue to hold on to the previous release result
-		// to ensure we can e.g. roll back when tests are enabled without
-		// any further changes to the release.
-		ignoreFailures := req.Object.GetTest().IgnoreFailures
-		if remediation := req.Object.GetActiveRemediation(); remediation != nil {
-			ignoreFailures = remediation.MustIgnoreTestFailures(req.Object.GetTest().IgnoreFailures)
+		if retry := req.Object.GetActiveRetry(); retry != nil {
+			req.Object.Status.History.TruncateIgnoringPreviousSnapshots()
+		} else {
+			// Remove all history up to the previous release action.
+			// We need to continue to hold on to the previous release result
+			// to ensure we can e.g. roll back when tests are enabled without
+			// any further changes to the release.
+			ignoreFailures := req.Object.GetTest().IgnoreFailures
+			if remediation := req.Object.GetActiveRemediation(); remediation != nil {
+				ignoreFailures = remediation.MustIgnoreTestFailures(req.Object.GetTest().IgnoreFailures)
+			}
+			req.Object.Status.History.Truncate(ignoreFailures)
 		}
-		req.Object.Status.History.Truncate(ignoreFailures)
 
 		if forceRequested {
 			log.Info(msgWithReason("forcing upgrade for in-sync release", "force requested through annotation"))
@@ -428,6 +460,15 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 		return NewTest(r.configFactory, r.eventRecorder), nil
 	case ReleaseStatusFailed:
 		log.Info(msgWithReason("release is in a failed state", state.Reason))
+
+		// If the action strategy is to retry (and not remediate), we behave just like
+		// "flux reconcile hr --force" and .spec.<action>.remediation.retries set to 0.
+		if req.Object.GetActiveRetry() != nil {
+			req.Object.Status.History.TruncateIgnoringPreviousSnapshots()
+
+			log.V(logger.DebugLevel).Info("retrying upgrade for failed release")
+			return NewUpgrade(r.configFactory, r.eventRecorder), nil
+		}
 
 		remediation := req.Object.GetActiveRemediation()
 

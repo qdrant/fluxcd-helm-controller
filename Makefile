@@ -33,14 +33,19 @@ CRD_DEP_ROOT ?= $(BUILD_DIR)/config/crd/bases
 # Keep a record of the version of the downloaded source CRDs. It is used to
 # detect and download new CRDs when the SOURCE_VER changes.
 SOURCE_VER ?= $(shell go list -m all | grep github.com/fluxcd/source-controller/api | awk '{print $$2}')
-SOURCE_BRANCH ?= d650fb97fa04e71a9607808189040502c928b5bf
+SOURCE_BRANCH ?= db50dcab0b4ead81c2c20740fce3134fe1164a90
 SOURCE_CRD_VER = $(CRD_DEP_ROOT)/.src-crd-$(SOURCE_VER)
 
 # HelmChart source CRD.
-HELMCHART_SOURCE_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_helmcharts.yaml
+HELMCHART_SOURCE_CRD ?= $(CRD_DEP_ROOT)/source.toolkit.fluxcd.io_helmcharts.yaml
+OCIREPO_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_ocirepositories.yaml
+EA_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_externalartifacts.yaml
+GITREPO_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_gitrepositories.yaml
+HELMREPO_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_helmrepositories.yaml
+BUCKET_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_buckets.yaml
 
 # API (doc) generation utilities
-CONTROLLER_GEN_VERSION ?= v0.15.0
+CONTROLLER_GEN_VERSION ?= v0.19.0
 GEN_API_REF_DOCS_VERSION ?= e327d0730470cbd61b06300f81c5fcf91c23c113
 
 all: manager
@@ -97,8 +102,8 @@ api-docs: gen-crd-api-reference-docs
 
 # Run go mod tidy
 tidy:
-	cd api; rm -f go.sum; go mod tidy -compat=1.22
-	rm -f go.sum; go mod tidy -compat=1.22
+	cd api; rm -f go.sum; go mod tidy -compat=1.25
+	rm -f go.sum; go mod tidy -compat=1.25
 
 # Run go fmt against code
 fmt:
@@ -113,6 +118,14 @@ vet:
 # Generate code
 generate: controller-gen
 	cd api; $(CONTROLLER_GEN) object:headerFile="../hack/boilerplate.go.txt" paths="./..."
+
+# Verify that the working directory is clean
+verify: fmt
+	@if [ ! "$$(git status --porcelain --untracked-files=no)" = "" ]; then \
+		echo "working directory is dirty:"; \
+		git --no-pager diff; \
+		exit 1; \
+	fi
 
 # Build the docker image
 docker-build:
@@ -136,12 +149,28 @@ $(SOURCE_CRD_VER):
 $(HELMCHART_SOURCE_CRD):
 	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_helmcharts.yaml > $(HELMCHART_SOURCE_CRD)
 
+$(OCIREPO_CRD):
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_ocirepositories.yaml -o $(OCIREPO_CRD)
+
+$(EA_CRD):
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_externalartifacts.yaml -o $(EA_CRD)
+
+$(GITREPO_CRD):
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_gitrepositories.yaml -o $(GITREPO_CRD)
+
+$(HELMREPO_CRD):
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_helmrepositories.yaml -o $(HELMREPO_CRD)
+
+$(BUCKET_CRD):
+	curl -s https://raw.githubusercontent.com/qdrant/fluxcd-source-controller/${SOURCE_BRANCH}/config/crd/bases/cd.qdrant.io_buckets.yaml -o $(BUCKET_CRD)
+
 # Download the CRDs the controller depends on
-download-crd-deps: $(SOURCE_CRD_VER) $(HELMCHART_SOURCE_CRD)
+download-crd-deps: $(SOURCE_CRD_VER) $(HELMCHART_SOURCE_CRD) $(OCIREPO_CRD) $(EA_CRD) $(GITREPO_CRD) $(HELMREPO_CRD) $(BUCKET_CRD)
 
 # Delete the downloaded CRD dependencies.
 cleanup-crd-deps:
 	rm -f $(HELMCHART_SOURCE_CRD)
+	rm -f $(CRD_DEP_ROOT)/source.toolkit.fluxcd.io_*.yaml
 
 # Find or download controller-gen
 CONTROLLER_GEN = $(GOBIN)/controller-gen
