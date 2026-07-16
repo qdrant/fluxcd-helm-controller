@@ -409,7 +409,7 @@ of their definition.</p>
 <td>
 <code>postRenderStrategy</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.PostRenderStrategy">
+<a href="#cd.qdrant.io/v2.PostRenderStrategy">
 PostRenderStrategy
 </a>
 </em>
@@ -427,7 +427,7 @@ Defaults to &lsquo;combined&rsquo;, or &lsquo;nohooks&rsquo; when the UseHelm3De
 <td>
 <code>waitStrategy</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.WaitStrategy">
+<a href="#cd.qdrant.io/v2.WaitStrategy">
 WaitStrategy
 </a>
 </em>
@@ -487,14 +487,14 @@ HelmReleaseStatus
 </p>
 <p>CRDsPolicy defines the install/upgrade approach to use for CRDs when
 installing or upgrading a HelmRelease.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.ChartNameChangeStrategy">ChartNameChangeStrategy
+<h3 id="cd.qdrant.io/v2.ChartNameChangeStrategy">ChartNameChangeStrategy
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.Upgrade">Upgrade</a>)
+<a href="#cd.qdrant.io/v2.Upgrade">Upgrade</a>)
 </p>
 <p>ChartNameChangeStrategy defines the strategy to use when a Helm chart name changes</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.CommonMetadata">CommonMetadata
+<h3 id="cd.qdrant.io/v2.CommonMetadata">CommonMetadata
 </h3>
 <p>
 (<em>Appears on:</em>
@@ -676,7 +676,7 @@ resource object that contains the reference.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.DriftDetection">DriftDetection
+<h3 id="cd.qdrant.io/v2.DriftDetection">DriftDetection
 </h3>
 <p>
 (<em>Appears on:</em>
@@ -1541,7 +1541,7 @@ of their definition.</p>
 <td>
 <code>postRenderStrategy</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.PostRenderStrategy">
+<a href="#cd.qdrant.io/v2.PostRenderStrategy">
 PostRenderStrategy
 </a>
 </em>
@@ -1559,7 +1559,7 @@ Defaults to &lsquo;combined&rsquo;, or &lsquo;nohooks&rsquo; when the UseHelm3De
 <td>
 <code>waitStrategy</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.WaitStrategy">
+<a href="#cd.qdrant.io/v2.WaitStrategy">
 WaitStrategy
 </a>
 </em>
@@ -1719,7 +1719,7 @@ up to the last successfully completed release.</p>
 <td>
 <code>inventory</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.ResourceInventory">
+<a href="#cd.qdrant.io/v2.ResourceInventory">
 ResourceInventory
 </a>
 </em>
@@ -2352,14 +2352,14 @@ patch, but this operator is simpler to specify.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.PostRenderStrategy">PostRenderStrategy
+<h3 id="cd.qdrant.io/v2.PostRenderStrategy">PostRenderStrategy
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>PostRenderStrategy represents the strategy for sending hooks to post-renderers.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.PostRenderer">PostRenderer
+<h3 id="cd.qdrant.io/v2.PostRenderer">PostRenderer
 </h3>
 <p>
 (<em>Appears on:</em>
@@ -2398,8 +2398,8 @@ Kustomize
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>, 
-<a href="#helm.toolkit.fluxcd.io/v2.Snapshot">Snapshot</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>, 
+<a href="#cd.qdrant.io/v2.Snapshot">Snapshot</a>)
 </p>
 <p>ReleaseAction is the action to perform a Helm release.</p>
 <h3 id="cd.qdrant.io/v2.Remediation">Remediation
@@ -2414,11 +2414,11 @@ UpgradeRemediation.</p>
 </p>
 <p>RemediationStrategy returns the strategy to use to remediate a failed install
 or upgrade.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.ResourceInventory">ResourceInventory
+<h3 id="cd.qdrant.io/v2.ResourceInventory">ResourceInventory
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseStatus">HelmReleaseStatus</a>)
 </p>
 <p>ResourceInventory contains a list of Kubernetes resource object references
 that have been applied by a HelmRelease.</p>
@@ -2436,7 +2436,7 @@ that have been applied by a HelmRelease.</p>
 <td>
 <code>entries</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.ResourceRef">
+<a href="#cd.qdrant.io/v2.ResourceRef">
 []ResourceRef
 </a>
 </em>
@@ -2449,11 +2449,11 @@ that have been applied by a HelmRelease.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.ResourceRef">ResourceRef
+<h3 id="cd.qdrant.io/v2.ResourceRef">ResourceRef
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.ResourceInventory">ResourceInventory</a>)
+<a href="#cd.qdrant.io/v2.ResourceInventory">ResourceInventory</a>)
 </p>
 <p>ResourceRef contains the information necessary to locate a resource within a cluster.</p>
 <div class="md-typeset__scrollwrap">
@@ -2493,7 +2493,7 @@ string
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.Retry">Retry
+<h3 id="cd.qdrant.io/v2.Retry">Retry
 </h3>
 <p>Retry defines a consistent interface for retry strategies from
 InstallStrategy and UpgradeStrategy.</p>
@@ -2620,7 +2620,7 @@ rollback action when it fails.</p>
 <td>
 <code>serverSideApply</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.ServerSideApplyMode">
+<a href="#cd.qdrant.io/v2.ServerSideApplyMode">
 ServerSideApplyMode
 </a>
 </em>
@@ -2637,16 +2637,16 @@ Defaults to &ldquo;auto&rdquo;.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.ServerSideApplyMode">ServerSideApplyMode
+<h3 id="cd.qdrant.io/v2.ServerSideApplyMode">ServerSideApplyMode
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.Rollback">Rollback</a>, 
-<a href="#helm.toolkit.fluxcd.io/v2.Upgrade">Upgrade</a>)
+<a href="#cd.qdrant.io/v2.Rollback">Rollback</a>, 
+<a href="#cd.qdrant.io/v2.Upgrade">Upgrade</a>)
 </p>
 <p>ServerSideApplyMode defines the server-side apply mode for Helm upgrade and
 rollback actions.</p>
-<h3 id="helm.toolkit.fluxcd.io/v2.Snapshot">Snapshot
+<h3 id="cd.qdrant.io/v2.Snapshot">Snapshot
 </h3>
 <p>Snapshot captures a point-in-time copy of the status information for a Helm release,
 as managed by the controller.</p>
@@ -2734,7 +2734,7 @@ string
 <td>
 <code>action</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.ReleaseAction">
+<a href="#cd.qdrant.io/v2.ReleaseAction">
 ReleaseAction
 </a>
 </em>
@@ -3313,7 +3313,7 @@ option users can opt-in to CRD upgrade, which is not (yet) natively supported by
 <td>
 <code>serverSideApply</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.ServerSideApplyMode">
+<a href="#cd.qdrant.io/v2.ServerSideApplyMode">
 ServerSideApplyMode
 </a>
 </em>
@@ -3330,7 +3330,7 @@ Defaults to &ldquo;auto&rdquo;.</p>
 <td>
 <code>chartNameChangeStrategy</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.ChartNameChangeStrategy">
+<a href="#cd.qdrant.io/v2.ChartNameChangeStrategy">
 ChartNameChangeStrategy
 </a>
 </em>
@@ -3471,11 +3471,11 @@ Defaults to &lsquo;5m&rsquo;.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.WaitStrategy">WaitStrategy
+<h3 id="cd.qdrant.io/v2.WaitStrategy">WaitStrategy
 </h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
+<a href="#cd.qdrant.io/v2.HelmReleaseSpec">HelmReleaseSpec</a>)
 </p>
 <p>WaitStrategy defines Helm&rsquo;s wait strategy for waiting for applied
 resources to become ready.</p>
@@ -3493,7 +3493,7 @@ resources to become ready.</p>
 <td>
 <code>name</code><br>
 <em>
-<a href="#helm.toolkit.fluxcd.io/v2.WaitStrategyName">
+<a href="#cd.qdrant.io/v2.WaitStrategyName">
 WaitStrategyName
 </a>
 </em>
@@ -3511,11 +3511,11 @@ gate is enabled.</p>
 </table>
 </div>
 </div>
-<h3 id="helm.toolkit.fluxcd.io/v2.WaitStrategyName">WaitStrategyName
+<h3 id="cd.qdrant.io/v2.WaitStrategyName">WaitStrategyName
 (<code>string</code> alias)</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#helm.toolkit.fluxcd.io/v2.WaitStrategy">WaitStrategy</a>)
+<a href="#cd.qdrant.io/v2.WaitStrategy">WaitStrategy</a>)
 </p>
 <p>WaitStrategyName is a strategy for waiting for resources to be ready.</p>
 <div class="admonition note">

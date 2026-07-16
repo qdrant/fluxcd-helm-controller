@@ -1045,7 +1045,7 @@ For example, to define a set of health check expressions for the `SealedSecret`
 custom resource:
 
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: sealed-secrets
@@ -1279,7 +1279,7 @@ to configure the following fields, while adjusting them to your desires for
 responsiveness:
 
 ```yaml
-apiVersion: source.toolkit.fluxcd.io/v1
+apiVersion: cd.qdrant.io/v1
 kind: OCIRepository
 metadata:
   name: webapp-chart
@@ -1295,7 +1295,7 @@ spec:
   ref:
     semver: "*" # track the latest stable version
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: webapp
@@ -2047,7 +2047,7 @@ inventory, as they are not considered part of the release by Helm.
 
 ```yaml
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: <release-name>

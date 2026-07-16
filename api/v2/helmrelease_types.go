@@ -1431,7 +1431,7 @@ const (
 
 // +genclient
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:shortName=hr,categories=all;fluxcd;fluxcd-appliers
+// +kubebuilder:resource:shortName=qdranthr,categories=all;fluxcd;fluxcd-appliers
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description=""
