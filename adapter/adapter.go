@@ -49,6 +49,7 @@ func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmRel
 		FieldManager:              adapter.ControllerName,
 		DependencyRequeueInterval: adapter.ReconcilerOptions.DependencyRequeueInterval,
 		ArtifactFetchRetries:      adapter.ReconcilerOptions.ArtifactFetchRetries,
+		LeaderElection:            adapter.LeaderElection,
 	}
 	return hr.SetupWithManager(ctx, mgr, controller.HelmReleaseReconcilerOptions{
 		MaxConcurrentReconciles: adapter.ReconcilerOptions.MaxConcurrentReconciles,

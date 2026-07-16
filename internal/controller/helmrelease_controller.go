@@ -99,6 +99,7 @@ type HelmReleaseReconciler struct {
 	KubeConfigOpts          runtimeClient.KubeConfigOptions
 	APIReader               client.Reader
 	TokenCache              *cache.TokenCache
+	LeaderElection          *bool
 
 	// Retry and requeue configuration
 
