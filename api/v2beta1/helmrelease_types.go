@@ -1096,7 +1096,6 @@ const (
 
 // +genclient
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:shortName=qdranthr
 // +kubebuilder:skipversion
 
 // HelmRelease is the Schema for the helmreleases API
@@ -1115,10 +1114,10 @@ func (in HelmRelease) GetRequeueAfter() time.Duration {
 	return in.Spec.Interval.Duration
 }
 
-// GetValues unmarshals the raw values to a map[string]interface{} and returns
+// GetValues unmarshals the raw values to a map[string]any and returns
 // the result.
-func (in HelmRelease) GetValues() map[string]interface{} {
-	var values map[string]interface{}
+func (in HelmRelease) GetValues() map[string]any {
+	var values map[string]any
 	if in.Spec.Values != nil {
 		_ = json.Unmarshal(in.Spec.Values.Raw, &values)
 	}

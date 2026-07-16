@@ -21,13 +21,12 @@ import (
 	"fmt"
 	"strings"
 
-	helmrelease "helm.sh/helm/v3/pkg/release"
+	helmrelease "helm.sh/helm/v4/pkg/release"
+	helmreleasev1 "helm.sh/helm/v4/pkg/release/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
-	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/fluxcd/pkg/runtime/conditions"
-	"github.com/fluxcd/pkg/runtime/logger"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
@@ -76,8 +75,8 @@ func NewRollbackRemediation(configFactory *action.ConfigFactory, eventRecorder r
 func (r *RollbackRemediation) Reconcile(ctx context.Context, req *Request) error {
 	var (
 		cur    = req.Object.Status.History.Latest().DeepCopy()
-		logBuf = action.NewLogBuffer(action.NewDebugLog(ctrl.LoggerFrom(ctx).V(logger.DebugLevel)), 10)
-		cfg    = r.configFactory.Build(logBuf.Log, observeRollback(req.Object))
+		logBuf = action.NewDebugLogBuffer(ctx)
+		cfg    = r.configFactory.Build(logBuf, observeRollback(req.Object), observeInventory(req.Object, req.Chart, r.configFactory.Getter, r.eventRecorder))
 	)
 
 	defer summarize(req)
@@ -95,7 +94,7 @@ func (r *RollbackRemediation) Reconcile(ctx context.Context, req *Request) error
 	}
 
 	// Run the Helm rollback action.
-	if err := action.Rollback(cfg, req.Object, prev.Name, action.RollbackToVersion(prev.Version)); err != nil {
+	if err := action.Rollback(cfg, req.Object, prev.Name, prev.Version); err != nil {
 		r.failure(req, prev, logBuf, err)
 
 		// Return error if we did not store a release, as this does not
@@ -147,6 +146,7 @@ func (r *RollbackRemediation) failure(req *Request, prev *v2.Snapshot, buffer *a
 			addAppVersion(prev.AppVersion), addOCIDigest(prev.OCIDigest)),
 		corev1.EventTypeWarning,
 		v2.RollbackFailedReason,
+		"%s",
 		eventMessageWithLog(msg, buffer),
 	)
 }
@@ -167,6 +167,7 @@ func (r *RollbackRemediation) success(req *Request, prev *v2.Snapshot) {
 			addAppVersion(prev.AppVersion), addOCIDigest(prev.OCIDigest)),
 		corev1.EventTypeNormal,
 		v2.RollbackSucceededReason,
+		"%s",
 		msg,
 	)
 }
@@ -180,11 +181,15 @@ func (r *RollbackRemediation) success(req *Request, prev *v2.Snapshot) {
 // If no matching snapshot is found, it creates a new snapshot and prepends it
 // to the release history.
 func observeRollback(obj *v2.HelmRelease) storage.ObserveFunc {
-	return func(rls *helmrelease.Release) {
+	return func(rlsr helmrelease.Releaser) {
+		rls, ok := rlsr.(*helmreleasev1.Release)
+		if !ok {
+			return
+		}
 		for i := range obj.Status.History {
 			snap := obj.Status.History[i]
 			if snap.Targets(rls.Name, rls.Namespace, rls.Version) {
-				newSnap := release.ObservedToSnapshot(releaseToObservation(rls, snap))
+				newSnap := release.ObservedToSnapshot(releaseToObservation(rls, snap, v2.ReleaseActionRollback))
 				newSnap.SetTestHooks(snap.GetTestHooks())
 				obj.Status.History[i] = newSnap
 				return

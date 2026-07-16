@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"helm.sh/helm/v3/pkg/kube"
+	"helm.sh/helm/v4/pkg/kube"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
@@ -38,9 +38,7 @@ import (
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
 	"github.com/fluxcd/helm-controller/internal/diff"
-	"github.com/fluxcd/helm-controller/internal/digest"
 	interrors "github.com/fluxcd/helm-controller/internal/errors"
-	"github.com/fluxcd/helm-controller/internal/postrender"
 )
 
 // OwnedConditions is a list of Condition types owned by the HelmRelease object.
@@ -113,22 +111,26 @@ var (
 // For more information on the individual ActionReconcilers, refer to their
 // documentation.
 type AtomicRelease struct {
-	patchHelper   *patch.SerialPatcher
-	configFactory *action.ConfigFactory
-	eventRecorder record.EventRecorder
-	strategy      releaseStrategy
-	fieldManager  string
+	patchHelper             *patch.SerialPatcher
+	configFactory           *action.ConfigFactory
+	eventRecorder           record.EventRecorder
+	strategy                releaseStrategy
+	fieldManager            string
+	disallowedFieldManagers []string
+	defaultToRetryOnFailure bool
 }
 
 // NewAtomicRelease returns a new AtomicRelease reconciler configured with the
 // provided values.
-func NewAtomicRelease(patchHelper *patch.SerialPatcher, cfg *action.ConfigFactory, recorder record.EventRecorder, fieldManager string) *AtomicRelease {
+func NewAtomicRelease(patchHelper *patch.SerialPatcher, cfg *action.ConfigFactory, recorder record.EventRecorder, fieldManager string, disallowedFieldManagers []string, defaultToRetryOnFailure bool) *AtomicRelease {
 	return &AtomicRelease{
-		patchHelper:   patchHelper,
-		eventRecorder: recorder,
-		configFactory: cfg,
-		strategy:      &cleanReleaseStrategy{},
-		fieldManager:  fieldManager,
+		patchHelper:             patchHelper,
+		eventRecorder:           recorder,
+		configFactory:           cfg,
+		strategy:                &cleanReleaseStrategy{},
+		fieldManager:            fieldManager,
+		disallowedFieldManagers: disallowedFieldManagers,
+		defaultToRetryOnFailure: defaultToRetryOnFailure,
 	}
 }
 
@@ -188,7 +190,7 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 		default:
 			// Determine the current state of the Helm release.
 			log.V(logger.DebugLevel).Info("determining current state of Helm release")
-			state, err := DetermineReleaseState(ctx, r.configFactory, req)
+			state, err := DetermineReleaseState(ctx, r.configFactory, req, r.disallowedFieldManagers)
 			if err != nil {
 				conditions.MarkFalse(req.Object, meta.ReadyCondition, "StateError", "Could not determine release state: %s", err)
 				return fmt.Errorf("cannot determine release state: %w", err)
@@ -217,22 +219,9 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 				conditions.Delete(req.Object, meta.ReconcilingCondition)
 
 				// Always summarize; this ensures we restore transient errors
-				// written to Ready.
+				// written to Ready, and updates the observed post-renderers
+				// and common-metadata digests.
 				summarize(req)
-
-				// remove stale post-renderers digest on successful reconciliation.
-				if conditions.IsReady(req.Object) {
-					req.Object.Status.ObservedPostRenderersDigest = ""
-					if req.Object.Spec.PostRenderers != nil {
-						// Update the post-renderers digest if the post-renderers exist.
-						req.Object.Status.ObservedPostRenderersDigest = postrender.Digest(digest.Canonical, req.Object.Spec.PostRenderers).String()
-					}
-					req.Object.Status.ObservedCommonMetadataDigest = ""
-					if req.Object.Spec.CommonMetadata != nil {
-						// Update the common-metadata digest if common-metadata exist.
-						req.Object.Status.ObservedCommonMetadataDigest = postrender.CommonMetadataDigest(digest.Canonical, req.Object.Spec.CommonMetadata).String()
-					}
-				}
 
 				return nil
 			}
@@ -243,7 +232,7 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 					fmt.Sprintf("instructed to stop before running %s action reconciler %s", next.Type(), next.Name()),
 				)
 
-				if retry := req.Object.GetActiveRetry(); retry != nil {
+				if retry := req.Object.GetActiveRetry(r.defaultToRetryOnFailure); retry != nil {
 					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "retrying after %s", retry.GetRetryInterval().String())
 					return ErrRetryAfterInterval
 				}
@@ -283,7 +272,7 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 					fmt.Sprintf("action reconciler %s of type %s returned error: %s", next.Name(), next.Type(), err),
 				)
 
-				if retry := req.Object.GetActiveRetry(); retry != nil {
+				if retry := req.Object.GetActiveRetry(r.defaultToRetryOnFailure); retry != nil {
 					log.Error(err, fmt.Sprintf("failed to run '%s' action", next.Name()))
 					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "retrying after %s", retry.GetRetryInterval().String())
 					return ErrRetryAfterInterval
@@ -301,13 +290,13 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 					"instructed to stop after running %s action reconciler %s", next.Type(), next.Name()),
 				)
 
-				if retry := req.Object.GetActiveRetry(); retry != nil {
+				if retry := req.Object.GetActiveRetry(r.defaultToRetryOnFailure); retry != nil {
 					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "retrying after %s", retry.GetRetryInterval().String())
 					return ErrRetryAfterInterval
 				}
 
 				remediation := req.Object.GetActiveRemediation()
-				if remediation == nil || !remediation.RetriesExhausted(req.Object) {
+				if remediation == nil || !remediation.RetriesExhausted(req.Object) || remediation.IsUninstallAfterUpgrade() {
 					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "%s", conditions.GetMessage(req.Object, meta.ReadyCondition))
 					return ErrMustRequeue
 				}
@@ -344,7 +333,7 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 	case ReleaseStatusInSync:
 		log.Info("release in-sync with desired state")
 
-		if retry := req.Object.GetActiveRetry(); retry != nil {
+		if retry := req.Object.GetActiveRetry(r.defaultToRetryOnFailure); retry != nil {
 			req.Object.Status.History.TruncateIgnoringPreviousSnapshots()
 		} else {
 			// Remove all history up to the previous release action.
@@ -360,7 +349,7 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 
 		if forceRequested {
 			log.Info(msgWithReason("forcing upgrade for in-sync release", "force requested through annotation"))
-			return NewUpgrade(r.configFactory, r.eventRecorder), nil
+			return NewUpgrade(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 		}
 
 		// Since the release is in-sync, remove any remediated condition if
@@ -375,6 +364,27 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 			replaceCondition(req.Object, v2.RemediatedCondition, v2.ReleasedCondition, v2.UpgradeSucceededReason, msg, metav1.ConditionTrue)
 		}
 
+		// Set Released and Ready to reflect the in-sync state if needed.
+		if !conditions.IsReady(req.Object) || !conditions.IsTrue(req.Object, v2.ReleasedCondition) {
+			var reason, msgFmt string
+			switch conditions.GetReason(req.Object, v2.ReleasedCondition) {
+			case v2.InstallFailedReason:
+				reason, msgFmt = v2.InstallSucceededReason, fmtInstallSuccess
+			case v2.UpgradeFailedReason:
+				reason, msgFmt = v2.UpgradeSucceededReason, fmtUpgradeSuccess
+			}
+			if reason != "" {
+				cur := req.Object.Status.History.Latest()
+				msg := fmt.Sprintf(msgFmt, cur.FullReleaseName(), cur.VersionedChartName())
+				conditions.MarkTrue(req.Object, v2.ReleasedCondition, reason, "%s", msg)
+				summarize(req)
+			}
+		}
+
+		if req.Object.GetDriftDetection().MustDetectChanges() {
+			conditions.MarkFalse(req.Object, v2.DriftedCondition, v2.NoDriftDetectedReason, "No drift detected against the cluster state")
+		}
+
 		return nil, nil
 	case ReleaseStatusLocked:
 		log.Info(msgWithReason("release locked", state.Reason))
@@ -385,33 +395,33 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 		if req.Object.GetInstall().GetRemediation().RetriesExhausted(req.Object) {
 			if forceRequested {
 				log.Info(msgWithReason("forcing install while out of retries", "force requested through annotation"))
-				return NewInstall(r.configFactory, r.eventRecorder), nil
+				return NewInstall(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 			}
 
 			return nil, fmt.Errorf("%w: cannot install release", ErrExceededMaxRetries)
 		}
 
-		return NewInstall(r.configFactory, r.eventRecorder), nil
+		return NewInstall(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 	case ReleaseStatusUnmanaged:
 		log.Info(msgWithReason("release not managed by controller", state.Reason))
 
 		// Clear the history as we can no longer rely on it.
 		req.Object.Status.ClearHistory()
 
-		return NewUpgrade(r.configFactory, r.eventRecorder), nil
+		return NewUpgrade(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 	case ReleaseStatusOutOfSync:
 		log.Info(msgWithReason("release out-of-sync with desired state", state.Reason))
 
 		if req.Object.GetUpgrade().GetRemediation().RetriesExhausted(req.Object) {
 			if forceRequested {
 				log.Info(msgWithReason("forcing upgrade while out of retries", "force requested through annotation"))
-				return NewUpgrade(r.configFactory, r.eventRecorder), nil
+				return NewUpgrade(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 			}
 
 			return nil, fmt.Errorf("%w: cannot upgrade release", ErrExceededMaxRetries)
 		}
 
-		return NewUpgrade(r.configFactory, r.eventRecorder), nil
+		return NewUpgrade(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 	case ReleaseStatusDrifted:
 		log.Info(msgWithReason("detected changes in cluster state", diff.SummarizeDiffSetBrief(state.Diff)))
 		for _, change := range state.Diff {
@@ -430,10 +440,10 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 			}
 		}
 
-		r.eventRecorder.Eventf(req.Object, corev1.EventTypeWarning, "DriftDetected",
-			"Cluster state of release %s has drifted from the desired state:\n%s",
-			req.Object.Status.History.Latest().FullReleaseName(), diff.SummarizeDiffSet(state.Diff),
-		)
+		msg := fmt.Sprintf("Cluster state of release %s has drifted from the desired state:\n%s",
+			req.Object.Status.History.Latest().FullReleaseName(), diff.SummarizeDiffSet(state.Diff))
+		r.eventRecorder.Eventf(req.Object, corev1.EventTypeWarning, v2.DriftDetectedReason, "%s", msg)
+		conditions.MarkTrue(req.Object, v2.DriftedCondition, v2.DriftDetectedReason, "%s", msg)
 
 		if req.Object.GetDriftDetection().GetMode() == v2.DriftDetectionEnabled {
 			return NewCorrectClusterDrift(r.configFactory, r.eventRecorder, state.Diff, kube.ManagedFieldsManager), nil
@@ -463,11 +473,11 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 
 		// If the action strategy is to retry (and not remediate), we behave just like
 		// "flux reconcile hr --force" and .spec.<action>.remediation.retries set to 0.
-		if req.Object.GetActiveRetry() != nil {
+		if req.Object.GetActiveRetry(r.defaultToRetryOnFailure) != nil {
 			req.Object.Status.History.TruncateIgnoringPreviousSnapshots()
 
 			log.V(logger.DebugLevel).Info("retrying upgrade for failed release")
-			return NewUpgrade(r.configFactory, r.eventRecorder), nil
+			return NewUpgrade(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 		}
 
 		remediation := req.Object.GetActiveRemediation()
@@ -476,7 +486,7 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 		// upgrade the release to see if that fixes the problem.
 		if remediation == nil {
 			log.V(logger.DebugLevel).Info("no active remediation strategy")
-			return NewUpgrade(r.configFactory, r.eventRecorder), nil
+			return NewUpgrade(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 		}
 
 		// If there is no failure count, the conditions under which the failure
@@ -486,14 +496,14 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 		// attempted again.
 		if remediation.GetFailureCount(req.Object) <= 0 {
 			log.Info("release conditions have changed since last failure")
-			return NewUpgrade(r.configFactory, r.eventRecorder), nil
+			return NewUpgrade(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 		}
 
 		// If the force annotation is set, we can attempt to upgrade the release
 		// without any further checks.
 		if forceRequested {
 			log.Info(msgWithReason("forcing upgrade for failed release", "force requested through annotation"))
-			return NewUpgrade(r.configFactory, r.eventRecorder), nil
+			return NewUpgrade(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 		}
 
 		// We have exhausted the number of retries for the remediation
@@ -522,7 +532,7 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 					// If the rollback target is in any way corrupt,
 					// the most correct remediation is to reattempt the upgrade.
 					log.Info(msgWithReason("unable to verify previous release in storage to roll back to", err.Error()))
-					return NewUpgrade(r.configFactory, r.eventRecorder), nil
+					return NewUpgrade(r.configFactory, r.eventRecorder, r.defaultToRetryOnFailure), nil
 				}
 
 				// This may be a temporary error, return it to retry.

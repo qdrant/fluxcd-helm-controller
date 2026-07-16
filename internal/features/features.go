@@ -25,13 +25,6 @@ import (
 )
 
 const (
-	// CacheSecretsAndConfigMaps configures the caching of Secrets and ConfigMaps
-	// by the controller-runtime client.
-	//
-	// When enabled, it will cache both object types, resulting in increased memory
-	// usage and cluster-wide RBAC permissions (list and watch).
-	CacheSecretsAndConfigMaps = "CacheSecretsAndConfigMaps"
-
 	// DetectDrift configures the detection of cluster state drift compared to
 	// the desired state as described in the manifest of the Helm release
 	// storage object.
@@ -61,6 +54,8 @@ const (
 	// This is enabled by default to support an upgrade path from v2beta1 to v2
 	// without the need to upgrade the Helm release. But it can be disabled to
 	// avoid potential abuse of the adoption mechanism.
+	//
+	// Ignored from v1.5.0, prints a warning if set.
 	AdoptLegacyReleases = "AdoptLegacyReleases"
 
 	// DisableChartDigestTracking disables the tracking of digest changes
@@ -70,19 +65,34 @@ const (
 	// append the digest to the chart version in Chart.yaml.
 	DisableChartDigestTracking = "DisableChartDigestTracking"
 
-	// AdditiveCELDependencyCheck controls whether the CEL dependency check
-	// should be additive, meaning that the built-in readiness check will
-	// be added to the user-defined CEL expressions.
-	AdditiveCELDependencyCheck = "AdditiveCELDependencyCheck"
+	// UseHelm3Defaults makes the controller use the Helm 3 default behaviors
+	// when defaults are used.
+	UseHelm3Defaults = "UseHelm3Defaults"
 
-	// ExternalArtifact controls whether the ExternalArtifact source type is enabled.
-	ExternalArtifact = "ExternalArtifact"
+	// CancelHealthCheckOnNewRevision controls whether ongoing health checks
+	// should be cancelled when a new reconciliation is triggered for the
+	// same HelmRelease, regardless of the reason. The name does not match
+	// this behavior exactly for historical reasons.
+	//
+	// When enabled, if a new reconciliation request is detected while waiting
+	// for resources to become ready, the current health check will be cancelled
+	// to allow immediate processing of the new reconciliation request. This can
+	// help avoid getting stuck on failing deployments when fixes are available.
+	CancelHealthCheckOnNewRevision = "CancelHealthCheckOnNewRevision"
+
+	// DefaultToRetryOnFailure changes the default install/upgrade strategy
+	// from RemediateOnFailure to RetryOnFailure when the user has not
+	// explicitly configured a strategy. Unlike RemediateOnFailure, which
+	// has a retry budget, RetryOnFailure retries indefinitely and
+	// auto-clears failures on success, providing better UX especially
+	// when CancelHealthCheckOnNewRevision is enabled.
+	DefaultToRetryOnFailure = "DefaultToRetryOnFailure"
 )
 
 var features = map[string]bool{
 	// CacheSecretsAndConfigMaps
 	// opt-in from v0.28
-	CacheSecretsAndConfigMaps: false,
+	controller.FeatureGateCacheSecretsAndConfigMaps: false,
 	// DetectDrift
 	// deprecated in v0.37.0
 	DetectDrift: false,
@@ -96,20 +106,32 @@ var features = map[string]bool{
 	// opt-in from v0.31
 	OOMWatch: false,
 	// AdoptLegacyReleases
-	// opt-out from v0.37
-	AdoptLegacyReleases: true,
+	// ignored, prints warning from v1.5.0
+	AdoptLegacyReleases: false,
 	// DisableChartDigestTracking
 	// opt-in from v1.3.0
 	DisableChartDigestTracking: false,
 	// AdditiveCELDependencyCheck
 	// opt-in from v1.4.0
-	AdditiveCELDependencyCheck: false,
+	controller.FeatureGateAdditiveCELDependencyCheck: false,
 	// ExternalArtifact
 	// opt-in from v1.4.0
-	ExternalArtifact: false,
+	controller.FeatureGateExternalArtifact: false,
 	// DisableConfigWatchers
 	// opt-in from v1.4.4
 	controller.FeatureGateDisableConfigWatchers: false,
+	// DirectSourceFetch
+	// opt-in from v1.5.0
+	controller.FeatureGateDirectSourceFetch: false,
+	// UseHelm3Defaults
+	// opt-in from v1.5.0
+	UseHelm3Defaults: false,
+	// CancelHealthCheckOnNewRevision
+	// opt-in from v1.5.0
+	CancelHealthCheckOnNewRevision: false,
+	// DefaultToRetryOnFailure
+	// opt-in from v1.5.2
+	DefaultToRetryOnFailure: false,
 }
 
 func init() {

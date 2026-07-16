@@ -27,12 +27,14 @@ import (
 
 // NewRetryableHTTPClient returns a new retrying HTTP client for loading
 // artifacts. The client will retry up to the given number of times before
-// giving up. The context is used to log errors.
-func NewRetryableHTTPClient(ctx context.Context, retries int) *retryablehttp.Client {
+// giving up. The context is used to log errors. The timeout is the maximum
+// duration for HTTP requests.
+func NewRetryableHTTPClient(ctx context.Context, retries int, timeout time.Duration) *retryablehttp.Client {
 	httpClient := retryablehttp.NewClient()
 	httpClient.RetryWaitMin = 5 * time.Second
 	httpClient.RetryWaitMax = 30 * time.Second
 	httpClient.RetryMax = retries
+	httpClient.HTTPClient.Timeout = timeout
 	httpClient.Logger = newLoggerForContext(ctx)
 	return httpClient
 }
@@ -47,18 +49,18 @@ type errorLogger struct {
 	log logr.Logger
 }
 
-func (l *errorLogger) Error(msg string, keysAndValues ...interface{}) {
+func (l *errorLogger) Error(msg string, keysAndValues ...any) {
 	l.log.Info(msg, keysAndValues...)
 }
 
-func (l *errorLogger) Info(msg string, keysAndValues ...interface{}) {
+func (l *errorLogger) Info(msg string, keysAndValues ...any) {
 	// Do nothing.
 }
 
-func (l *errorLogger) Debug(msg string, keysAndValues ...interface{}) {
+func (l *errorLogger) Debug(msg string, keysAndValues ...any) {
 	// Do nothing.
 }
 
-func (l *errorLogger) Warn(msg string, keysAndValues ...interface{}) {
+func (l *errorLogger) Warn(msg string, keysAndValues ...any) {
 	// Do nothing.
 }

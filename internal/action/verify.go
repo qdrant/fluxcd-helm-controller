@@ -18,14 +18,15 @@ package action
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/opencontainers/go-digest"
-	helmaction "helm.sh/helm/v3/pkg/action"
-	helmchart "helm.sh/helm/v3/pkg/chart"
-	helmchartutil "helm.sh/helm/v3/pkg/chartutil"
-	helmrelease "helm.sh/helm/v3/pkg/release"
+	helmaction "helm.sh/helm/v4/pkg/action"
+	helmchartutil "helm.sh/helm/v4/pkg/chart/common"
+	helmchart "helm.sh/helm/v4/pkg/chart/v2"
+	helmrelease "helm.sh/helm/v4/pkg/release/v1"
 
-	helmdriver "helm.sh/helm/v3/pkg/storage/driver"
+	helmdriver "helm.sh/helm/v4/pkg/storage/driver"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/release"
@@ -42,10 +43,10 @@ var (
 )
 
 const (
-	targetStorageNamespace = "storage namespace"
-	targetReleaseNamespace = "release namespace"
-	targetReleaseName      = "release name"
-	targetChartName        = "chart name"
+	TargetStorageNamespace = "storage namespace"
+	TargetReleaseNamespace = "release namespace"
+	TargetReleaseName      = "release name"
+	TargetChartName        = "chart name"
 )
 
 // ReleaseTargetChanged returns a reason and true if the given release and/or
@@ -61,13 +62,13 @@ func ReleaseTargetChanged(obj *v2.HelmRelease, chartName string) (string, bool) 
 	case obj.Status.StorageNamespace == "", cur == nil:
 		return "", false
 	case obj.GetStorageNamespace() != obj.Status.StorageNamespace:
-		return targetStorageNamespace, true
+		return TargetStorageNamespace, true
 	case obj.GetReleaseNamespace() != cur.Namespace:
-		return targetReleaseNamespace, true
+		return TargetReleaseNamespace, true
 	case release.ShortenName(obj.GetReleaseName()) != cur.Name:
-		return targetReleaseName, true
+		return TargetReleaseName, true
 	case chartName != cur.ChartName:
-		return targetChartName, true
+		return TargetChartName, true
 	default:
 		return "", false
 	}
@@ -87,7 +88,11 @@ func LastRelease(config *helmaction.Configuration, releaseName string) (*helmrel
 		}
 		return nil, err
 	}
-	return rls, nil
+	rlsTyped, ok := rls.(*helmrelease.Release)
+	if !ok {
+		return nil, fmt.Errorf("only the Chart API v2 is supported")
+	}
+	return rlsTyped, nil
 }
 
 // VerifySnapshot verifies the data of the given v2.Snapshot
@@ -100,12 +105,16 @@ func VerifySnapshot(config *helmaction.Configuration, snapshot *v2.Snapshot) (rl
 		return nil, ErrReleaseNotFound
 	}
 
-	rls, err = config.Releases.Get(snapshot.Name, snapshot.Version)
+	rlsr, err := config.Releases.Get(snapshot.Name, snapshot.Version)
 	if err != nil {
 		if errors.Is(err, helmdriver.ErrReleaseNotFound) {
 			return nil, ErrReleaseDisappeared
 		}
 		return nil, err
+	}
+	rls, ok := rlsr.(*helmrelease.Release)
+	if !ok {
+		return nil, fmt.Errorf("only the Chart API v2 is supported")
 	}
 
 	if err = VerifyReleaseObject(snapshot, rls); err != nil {
@@ -118,7 +127,18 @@ func VerifySnapshot(config *helmaction.Configuration, snapshot *v2.Snapshot) (rl
 // matches the given Helm release object. It returns an error of type
 // ErrReleaseDigest or ErrReleaseNotObserved indicating the reason for the
 // verification failure, or nil.
+//
+// For legacy snapshots (those with an APIVersion missing or not matching the
+// current version), digest verification is skipped to allow graceful migration
+// from older helm-controller versions.
 func VerifyReleaseObject(snapshot *v2.Snapshot, rls *helmrelease.Release) error {
+	// Skip digest verification for legacy snapshots to allow migration.
+	// The release ownership is still verified by matching the release
+	// name, namespace, and version in the caller.
+	if snapshot.APIVersion != v2.CurrentSnapshotAPIVersion {
+		return nil
+	}
+
 	relDig, err := digest.Parse(snapshot.Digest)
 	if err != nil {
 		return ErrReleaseDigest

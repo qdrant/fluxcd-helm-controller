@@ -196,7 +196,8 @@ Helm release when the HelmChart produces a new chart (version).
 
 **Warning:** Changing the `.spec.chart` to a Helm chart with a different name
 (as specified in the chart's `Chart.yaml`) will cause the controller to
-uninstall any previous release before installing the new one.
+uninstall any previous release before installing the new one unless 
+`.spec.upgrade.chartNameChangeStrategy` is set to `InPlaceUpdate`
 
 **Note:** On multi-tenant clusters, platform admins can disable cross-namespace
 references with the `--no-cross-namespace-refs=true` flag. When this flag is
@@ -487,6 +488,13 @@ An item on the list offers the following subkeys:
   `true`, a not found error for the values reference is ignored, but any
   `valuesKey`, `targetPath` or transient error will still result in a
   reconciliation failure. Defaults to `false` when omitted.
+- `literal` (Optional): When set together with `targetPath`, the referenced
+  value is merged at the target path verbatim, without interpreting Helm's
+  `--set` syntax (commas, brackets, dots, equal signs, etc.). Mirrors the
+  behavior of `helm --set-literal`. Use this to inject arbitrary file content
+  (config files, JSON blobs, multi-line strings containing special characters)
+  through `valuesFrom`. Has no effect when `targetPath` is empty.
+  Defaults to `false` when omitted.
 
 ```yaml
 spec:
@@ -499,6 +507,11 @@ spec:
       valuesKey: crt
       targetPath: tls.crt
       optional: true
+    - kind: ConfigMap
+      name: app-config-source
+      valuesKey: application.yml
+      targetPath: 'externalConfig.application\.yml.content'
+      literal: true
 ```
 
 **Note:** The `targetPath` supports the same formatting as you would supply as
@@ -509,6 +522,11 @@ a list). You can read more about the available formats and limitations in the
 
 For JSON strings, the [limitations are the same as while using `helm`](https://github.com/helm/helm/issues/5618)
 and require you to escape the full JSON string (including `=`, `[`, `,`, `.`).
+
+To skip the `--set`-style parsing entirely and pass the value as a raw string
+(useful for full config files or any content containing `,`, `[`, `]`, `{`,
+`}`, `=`), set `literal: true` together with `targetPath`. This mirrors
+`helm --set-literal`.
 
 To make a HelmRelease react immediately to changes in the referenced Secret
 or ConfigMap see [this](#reacting-immediately-to-configuration-dependencies)
@@ -524,6 +542,22 @@ with the values from these references, overwriting any existing ones.
 spec:
   values:
     replicaCount: 2
+```
+
+### Post-render strategy
+
+`.spec.postRenderStrategy` is an optional field to configure the strategy for sending
+hooks to post-renderers. Valid values are:
+
+- `nohooks`: Hooks are not sent to post-renderers (Helm 3 behavior).
+- `combined`: Hooks and templates are sent together to post-renderers in the same stream (Helm 4 default).
+- `separate`: Hooks and templates are sent to post-renderers in separate streams (Helm 4.2 opt-in).
+
+Defaults to `combined`, or `nohooks` when the `UseHelm3Defaults` feature gate is enabled.
+
+```yaml
+spec:
+  postRenderStrategy: combined
 ```
 
 ### Install configuration
@@ -559,6 +593,11 @@ The field offers the following subfields:
   the installation of the chart. Defaults to `false`.
 - `.disableWaitForJobs` (Optional): Disables waiting for any Jobs to complete
   after the installation of the chart. Defaults to `false`.
+- `.serverSideApply` (Optional): Enables Server-Side Apply for resources during
+  the installation. When `true`, the controller uses Kubernetes Server-Side
+  Apply which provides better conflict detection and field ownership tracking.
+  Defaults to `true` (or `false` when the `UseHelm3Defaults` feature gate is
+  enabled).
 
 #### Install strategy
 
@@ -571,7 +610,8 @@ The field offers the following subfields:
   `RemediateOnFailure` or `RetryOnFailure`.
   If the `.spec.install.strategy` field is not specified, the HelmRelease
   reconciliation behaves as if `.spec.install.strategy.name` was set to
-  `RemediateOnFailure`.
+  `RemediateOnFailure`, or `RetryOnFailure` when the
+  `DefaultToRetryOnFailure` feature gate is enabled.
 - `.retryInterval` (Optional): The time to wait between retries of failed
   releases when the install strategy is set to `RetryOnFailure`. Defaults
   to `5m`. Cannot be used with `RemediateOnFailure`.
@@ -616,6 +656,10 @@ The field offers the following subfields:
   Valid values are `Skip`, `Create` and `CreateReplace`. Default is `Skip`.
   Refer to [Custom Resource Definition lifecycle](#controlling-the-lifecycle-of-custom-resource-definitions)
   for more information.
+- `.chartNameChangeStrategy` (Optional): defines the strategy to use when a Helm chart name changes.
+  Valid values are `Reinstall` or `InPlaceUpdate`. Defaults to `Reinstall` if omitted.
+  `Reinstall`: Reinstall the Helm release, uninstalling the existing Helm release.
+  `InPlaceUpdate`: Update the Helm release in place.
 - `.cleanupOnFail` (Optional): Allows deletion of new resources created during
   the upgrade of the release when it fails. Defaults to `false`.
 - `.disableHooks` (Optional): Prevents [chart hooks](https://helm.sh/docs/topics/charts_hooks/)
@@ -630,11 +674,17 @@ The field offers the following subfields:
   upgrading the release. Defaults to `false`.
 - `.disableWaitForJobs` (Optional): Disables waiting for any Jobs to complete
   after upgrading the release. Defaults to `false`.
-- `.force` (Optional): Forces resource updates through a replacement strategy.
+- `.force` (Optional): Forces resource updates through a replacement strategy
+  that avoids 3-way merge conflicts on client-side apply.
+  This field is ignored for server-side apply (which always forces conflicts
+  with other field managers).
   Defaults to `false`.
 - `.preserveValues` (Optional): Instructs Helm to re-use the values from the
   last release while merging in overrides from [values](#values). Setting
   this flag makes the HelmRelease non-declarative. Defaults to `false`.
+- `.serverSideApply` (Optional): Controls Server-Side Apply for resources during
+  the upgrade. Can be `enabled`, `disabled`, or `auto`. When `auto`, the apply
+  method will be based on the release's previous usage. Defaults to `auto`.
 
 #### Upgrade strategy
 
@@ -646,7 +696,9 @@ The field offers the following subfields:
 - `.name` (Required): The name of the upgrade strategy to use. One of
   `RemediateOnFailure` or `RetryOnFailure`. If the `.spec.upgrade.strategy`
   field is not specified, the HelmRelease reconciliation behaves as if
-  `.spec.upgrade.strategy.name` was set to `RemediateOnFailure`.
+  `.spec.upgrade.strategy.name` was set to `RemediateOnFailure`, or
+  `RetryOnFailure` when the `DefaultToRetryOnFailure` feature gate is
+  enabled.
 - `.retryInterval` (Optional): The time to wait between retries of failed
   releases when the upgrade strategy is set to `RetryOnFailure`. Defaults
   to `5m`. Cannot be used with `RemediateOnFailure`.
@@ -673,6 +725,8 @@ The field offers the following subfields:
   infinite number of retries.
 - `.strategy` (Optional): The remediation strategy to use when a Helm upgrade
   fails. Valid values are `rollback` and `uninstall`. Defaults to `rollback`.
+  After an `uninstall` remediation, the controller will attempt to reinstall
+  the release.
 - `.ignoreTestFailures` (Optional): Instructs the controller to not remediate
   when a [Helm test](#test-configuration) failure occurs. Defaults to
   `.spec.test.ignoreFailures`.
@@ -742,10 +796,20 @@ The field offers the following subfields:
   rolling back the release. Defaults to `false`.
 - `.disableWaitForJobs` (Optional): Disables waiting for any Jobs to complete
   after rolling back the release. Defaults to `false`.
-- `.force` (Optional): Forces resource updates through a replacement strategy.
+- `.force` (Optional): Forces resource updates through a replacement strategy
+  that avoids 3-way merge conflicts on client-side apply.
+  This field is ignored for server-side apply (which always forces conflicts
+  with other field managers).
   Defaults to `false`.
 - `.recreate` (Optional): Performs Pod restarts if applicable. Defaults to
-  `false`.
+  `false`. **Warning**: As of Flux v2.8, this option is deprecated and no
+  longer has any effect. It will be removed in a future release. The
+  helm-controller will print a warning if this option is used. Please
+  see the [Helm 4 issue](https://github.com/fluxcd/helm-controller/issues/1300#issuecomment-3740272924)
+  for more details.
+- `.serverSideApply` (Optional): Controls Server-Side Apply for resources during
+  the rollback. Can be `enabled`, `disabled`, or `auto`. When `auto`, the apply
+  method will be based on the release's previous usage. Defaults to `auto`.
 
 ### Uninstall configuration
 
@@ -927,6 +991,92 @@ spec:
             newTag: 0.4.1-debian-10-r54
 ```
 
+### Wait strategy
+
+`.spec.waitStrategy` is an optional field to configure how the controller waits
+for resources to become ready after Helm actions.
+
+The field offers the following subfields:
+
+- `.name` (Required): The strategy for waiting for resources to be ready.
+  One of `poller` or `legacy`. The `poller` strategy uses kstatus to poll resource
+  statuses, while the `legacy` strategy uses Helm v3's waiting logic. Defaults to
+  `poller`, or to `legacy` when the `UseHelm3Defaults` feature gate is enabled.
+
+```yaml
+spec:
+  waitStrategy:
+    name: poller
+```
+
+### Health check expressions
+
+`.spec.healthCheckExprs` can be used to define custom logic for performing health
+checks on custom resources using [Common Expression Language (CEL)](https://cel.dev/).
+
+The expressions are evaluated only when the Helm action taking place has wait
+enabled (i.e. `.spec.<action>.disableWait` is `false`) and the `poller`
+wait strategy is used (i.e. `.spec.waitStrategy.name` is `poller`).
+
+The `.spec.healthCheckExprs` field accepts a list of objects with the following fields:
+
+- `apiVersion`: The API version of the custom resource. Required. Only the
+  group portion is used for matching; the version is ignored, so the same
+  entry applies to every served version of the resource.
+- `kind`: The kind of the custom resource. Optional. When omitted, the entry
+  applies to all kinds under the given `apiVersion`'s group. An entry with a
+  specific `kind` takes precedence over a group-only entry for that same kind.
+- `current`: A required CEL expression that returns `true` if the resource is ready.
+- `inProgress`: An optional CEL expression that returns `true` if the resource
+  is still being reconciled.
+- `failed`: An optional CEL expression that returns `true` if the resource
+  failed to reconcile.
+
+The controller will evaluate the expressions in the following order:
+
+1. `inProgress` if specified
+2. `failed` if specified
+3. `current`
+
+The first expression that evaluates to `true` will determine the health
+status of the custom resource.
+
+For example, to define a set of health check expressions for the `SealedSecret`
+custom resource:
+
+```yaml
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: sealed-secrets
+spec:
+  interval: 10m
+  chartRef:
+    kind: OCIRepository
+    name: sealed-secrets-chart
+  values:
+    replicaCount: 2
+  healthCheckExprs:
+    - apiVersion: bitnami.com/v1alpha1
+      kind: SealedSecret
+      failed: status.conditions.filter(e, e.type == 'Synced').all(e, e.status == 'False')
+      current: status.conditions.filter(e, e.type == 'Synced').all(e, e.status == 'True')
+```
+
+A common error is writing expressions that reference fields that do not
+exist in the custom resource. This will cause the controller to wait
+for the resource to be ready until the timeout is reached. To avoid this,
+make sure your CEL expressions are correct. The
+[CEL Playground](https://playcel.undistro.io/) is a useful resource for
+this task. The input passed to each expression is the custom resource
+object itself. You can check for field existence with the
+[`has(...)` CEL macro](https://github.com/google/cel-spec/blob/master/doc/langdef.md#macros),
+just be aware that `has(status)` errors if `status` does not (yet) exist
+on the top level of the resource you are using.
+
+It's worth checking if [the library](/flux/cheatsheets/cel-healthchecks/)
+has expressions for the custom resources you are using.
+
 ### KubeConfig (Remote clusters)
 
 With the `.spec.kubeConfig` field a HelmRelease
@@ -993,7 +1143,7 @@ stringData:
   value.yaml: |
     apiVersion: v1
     kind: Config
-    # ...omitted for brevity   
+    # ...omitted for brevity
 ```
 
 **Note:** The KubeConfig should be self-contained and not rely on binaries, the
@@ -1129,7 +1279,7 @@ to configure the following fields, while adjusting them to your desires for
 responsiveness:
 
 ```yaml
-apiVersion: cd.qdrant.io/v1
+apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:
   name: webapp-chart
@@ -1145,7 +1295,7 @@ spec:
   ref:
     semver: "*" # track the latest stable version
 ---
-apiVersion: cd.qdrant.io/v2
+apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: webapp
@@ -1855,6 +2005,7 @@ status:
       namespace: podinfo
       ociDigest: sha256:0cc9a8446c95009ef382f5eade883a67c257f77d50f84e78ecef2aac9428d1e5
       status: deployed
+      action: upgrade
       testHooks:
         podinfo-grpc-test-goyey:
           lastCompleted: "2024-05-07T04:55:11Z"
@@ -1872,6 +2023,7 @@ status:
       namespace: podinfo
       ociDigest: sha256:cdd538a0167e4b51152b71a477e51eb6737553510ce8797dbcc537e1342311bb
       status: superseded
+      action: install
       testHooks:
         podinfo-grpc-test-q0ucx:
           lastCompleted: "2024-05-07T04:54:25Z"
@@ -1880,14 +2032,45 @@ status:
       version: 1
 ```
 
+### Inventory
+
+The HelmRelease reports the list of Kubernetes resource objects that have been
+applied by the Helm release in `.status.inventory`. This can be used to
+identify which objects are managed by the HelmRelease. The inventory records
+are in the format `<namespace>_<name>_<group>_<kind>`.
+
+The inventory includes all resources from the rendered manifests, as well as
+CRDs from the chart's `crds/` directory. Helm hooks are not included in the
+inventory, as they are not considered part of the release by Helm.
+
+#### Inventory example
+
+```yaml
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: <release-name>
+status:
+  inventory:
+    entries:
+      - id: default_podinfo__Service
+        v: v1
+      - id: default_podinfo_apps_Deployment
+        v: v1
+      - id: default_podinfo_autoscaling_HorizontalPodAutoscaler
+        v: v2
+```
+
 ### Conditions
 
 A HelmRelease enters various states during its lifecycle, reflected as
 [Kubernetes Conditions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties).
 It can be [reconciling](#reconciling-helmrelease) when it is being processed by
 the controller, it can be [ready](#ready-helmrelease) when the Helm release is
-installed and up-to-date, or it can [fail](#failed-helmrelease) during
-reconciliation.
+installed and up-to-date, it can [fail](#failed-helmrelease) during
+reconciliation, or it can be [drifted](#drifted-helmrelease) if the
+drift detection mode is set to enabled/warn and there is a drift.
 
 The HelmRelease API is compatible with the [kstatus specification](https://github.com/kubernetes-sigs/cli-utils/tree/master/pkg/kstatus),
 and reports `Reconciling` and `Stalled` conditions where applicable to provide
@@ -1971,6 +2154,29 @@ HelmRelease's `.status.conditions`:
 
 The `TestSuccess` Condition will retain a status value of `"True"` until the
 next Helm install or upgrade occurs, or the Helm tests are disabled.
+
+#### Drifted HelmRelease
+
+The helm-controller marks the HelmRelease as _drifted_ when it has the following
+characteristics:
+
+- The HelmRelease have drift detection mode set to enabled or warn.
+- There is a drift detected against the cluster state.
+
+When the HelmRelease is "drifted", the controller sets a Condition with the
+following attributes in the HelmRelease's `.status.conditions`:
+
+- `type: Drifted`
+- `status: "True"`
+- `reason: DriftDetected`
+
+When the HelmRelease have drift detection mode set to enabled or warn there
+and there is no drift, the controller sets a Condition with the following
+attributes in the HelmRelease's `.status.conditions`:
+
+- `type: Drifted`
+- `status: "False"`
+- `reason: NoDriftDetected`
 
 #### Failed HelmRelease
 

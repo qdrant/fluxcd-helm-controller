@@ -19,13 +19,18 @@ GOBIN=$(shell go env GOBIN)
 endif
 export PATH:=$(GOBIN):${PATH}
 
+# Allows for defining additional Go test args, e.g. '-tags integration'.
+GO_TEST_ARGS ?=
+
 # Allows for defining additional Docker buildx arguments, e.g. '--push'.
 BUILD_ARGS ?= --load
-# Architectures to build images for.
-BUILD_PLATFORMS ?= linux/amd64
+# Host architecture, used so local builds and envtest target the host.
+LOCALARCH ?= $(shell go env GOARCH)
+# Architectures to build images for; defaults to the host architecture.
+BUILD_PLATFORMS ?= linux/$(LOCALARCH)
 
-# Architecture to use envtest with
-ENVTEST_ARCH ?= amd64
+# Architecture to use envtest with; defaults to the host architecture.
+ENVTEST_ARCH ?= $(LOCALARCH)
 
 # Paths to download the CRD dependency to.
 CRD_DEP_ROOT ?= $(BUILD_DIR)/config/crd/bases
@@ -45,15 +50,15 @@ HELMREPO_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_helmrepositories.yaml
 BUCKET_CRD ?= $(CRD_DEP_ROOT)/cd.qdrant.io_buckets.yaml
 
 # API (doc) generation utilities
-CONTROLLER_GEN_VERSION ?= v0.19.0
+CONTROLLER_GEN_VERSION ?= v0.21.0
 GEN_API_REF_DOCS_VERSION ?= e327d0730470cbd61b06300f81c5fcf91c23c113
 
 all: manager
 
 # Run tests
 KUBEBUILDER_ASSETS?="$(shell $(ENVTEST) --arch=$(ENVTEST_ARCH) use -i $(ENVTEST_KUBERNETES_VERSION) --bin-dir=$(ENVTEST_ASSETS_DIR) -p path)"
-test: tidy generate fmt vet manifests install-envtest download-crd-deps
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./... -coverprofile cover.out
+test: tidy generate fmt vet manifests api-docs install-envtest download-crd-deps
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) go test ./... $(GO_TEST_ARGS) -coverprofile cover.out
 	cd api; go test ./... -coverprofile cover.out
 
 # Build manager binary
@@ -102,8 +107,8 @@ api-docs: gen-crd-api-reference-docs
 
 # Run go mod tidy
 tidy:
-	cd api; rm -f go.sum; go mod tidy -compat=1.25
-	rm -f go.sum; go mod tidy -compat=1.25
+	cd api; rm -f go.sum; go mod tidy -compat=1.26
+	rm -f go.sum; go mod tidy -compat=1.26
 
 # Run go fmt against code
 fmt:
