@@ -168,8 +168,6 @@ github.com/fluxcd/pkg/ssa v0.76.1 h1:IckNphuK3LuTRNkdRZlXEri7ZFXPc1Qj39TUHwOspv0
 github.com/fluxcd/pkg/ssa v0.76.1/go.mod h1:bNImnO/GHtjjgp7BtGXVk181CoZbH9rEVEJfOwg1Xo8=
 github.com/fluxcd/pkg/testserver v0.14.0 h1:wVv/JPY3i4OEJ8xakfriuN2oHiUyZZ+BfhC/6RCD2nI=
 github.com/fluxcd/pkg/testserver v0.14.0/go.mod h1:6D6/SeGl8jT8L8pb5+k+mkE5CtqV1ozC5uqXRuTEBas=
-github.com/fluxcd/source-controller/api v1.9.0 h1:kO5elmtCk227YKAfpTY+8Q6rgozOYmeyRRskGZBEbbo=
-github.com/fluxcd/source-controller/api v1.9.0/go.mod h1:NsJJuEPUYYUJ0u8wMnAqS2T+bXyxOmGrnwdzvZRTiZw=
 github.com/foxcpp/go-mockdns v1.2.0 h1:omK3OrHRD1IWJz1FuFBCFquhXslXoF17OvBS6JPzZF0=
 github.com/foxcpp/go-mockdns v1.2.0/go.mod h1:IhLeSFGed3mJIAXPH2aiRQB+kqz7oqu8ld2qVbOu7Wk=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
@@ -371,6 +369,8 @@ github.com/prometheus/otlptranslator v1.0.0 h1:s0LJW/iN9dkIH+EnhiD3BlkkP5QVIUVEo
 github.com/prometheus/otlptranslator v1.0.0/go.mod h1:vRYWnXvI6aWGpsdY/mOT/cbeVRBlPWtBNDb7kGR3uKM=
 github.com/prometheus/procfs v0.20.1 h1:XwbrGOIplXW/AU3YhIhLODXMJYyC1isLFfYCsTEycfc=
 github.com/prometheus/procfs v0.20.1/go.mod h1:o9EMBZGRyvDrSPH1RqdxhojkuXstoe4UlK79eF5TGGo=
+github.com/qdrant/fluxcd-source-controller/api v1.7.4-qdrant.1.0.20260716043640-6397e61c881e h1:ezTkkf90CaqSb9yy6eVL3vGfTPWsoYr0+AhdUD3OvUs=
+github.com/qdrant/fluxcd-source-controller/api v1.7.4-qdrant.1.0.20260716043640-6397e61c881e/go.mod h1:qO98L20gw0MvLpSPapJKypyxHP7PejmJN5KxWXxDjCA=
 github.com/redis/go-redis/extra/rediscmd/v9 v9.0.5 h1:EaDatTxkdHG+U3Bk4EUr+DZ7fOGwTfezUiUJMaIcaho=
 github.com/redis/go-redis/extra/rediscmd/v9 v9.0.5/go.mod h1:fyalQWdtzDBECAQFBJuQe5bzQ02jGd5Qcbgb97Flm7U=
 github.com/redis/go-redis/extra/redisotel/v9 v9.0.5 h1:EfpWLLCyXw8PSM2/XNJLjI3Pb27yVE+gIAfeqp8LUCc=
