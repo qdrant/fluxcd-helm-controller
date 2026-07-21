@@ -1096,7 +1096,7 @@ const (
 
 // +genclient
 // +kubebuilder:object:root=true
-// +kubebuilder:skipversion
+// +kubebuilder:deprecatedversion:warning="v2beta1 HelmRelease is deprecated, upgrade to v2"
 
 // HelmRelease is the Schema for the helmreleases API
 type HelmRelease struct {
