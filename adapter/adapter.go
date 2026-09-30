@@ -9,6 +9,7 @@ import (
 	"github.com/fluxcd/pkg/runtime/events"
 
 	"github.com/fluxcd/helm-controller/internal/controller"
+	"helm.sh/helm/v4/pkg/kube"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -31,6 +32,9 @@ type HelmReleaseReconcilerOption struct {
 }
 
 func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmReleaseAdapter) error {
+	// Field owner for the drift-detection dry-run; upstream sets it in its own main.
+	kube.ManagedFieldsManager = adapter.ControllerName
+
 	var eventRecorder *events.Recorder
 	var err error
 
