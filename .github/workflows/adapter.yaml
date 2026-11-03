@@ -1,0 +1,34 @@
+name: adapter
+
+# Fails with a pointer to the porting steps when adapter/adapter.go, the fork's
+# own setup of the HelmRelease reconciler for qdrant-cloud-agent, no longer builds
+# against upstream's code: upstream changes the reconcilers' setup without
+# knowing about it. See "Porting the adapter" in the README.
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build the adapter
+        run: |
+          if ! go build ./adapter/; then
+            echo "::error file=adapter/adapter.go,title=adapter/adapter.go needs to be ported::Upstream changed how the reconcilers are set up. Make the same change here: see \"Porting the adapter\" in the README."
+            exit 1
+          fi
