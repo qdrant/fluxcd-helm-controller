@@ -1,0 +1,59 @@
+# The rules shared by the Qdrant Go services' .golangci.yaml files.
+version: "2"
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+linters:
+  enable:
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - errorlint
+    - goconst
+    - godot
+    - modernize
+    - nilerr
+    - nolintlint
+    - prealloc
+    - promlinter
+    - revive
+    - sloglint
+    - testifylint
+    - thelper
+    - unparam
+    - usestdlibvars
+  settings:
+    revive:
+      rules:
+        - name: exported
+  exclusions:
+    generated: lax
+    rules:
+      # Repeated literals in tests (tag names, command names) read better than constants.
+      - path: _test\.go
+        linters:
+          - goconst
+    paths:
+      - generated.*\.go$
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard # Standard section: captures all standard packages.
+        - default # Default section: contains all imports that could not be matched to another section type.
+        - prefix(github.com/qdrant) # Custom section: groups all imports with the specified Prefix.
+        - prefix(github.com/qdrant/fluxcd-helm-controller/tools/fork-sync/) # Custom section: groups all imports with the specified Prefix (this component).
+  exclusions:
+    generated: lax
+    paths:
+      - generated.*\.go$
+      - third_party$
+      - builtin$
+      - examples$
