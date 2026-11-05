@@ -21,6 +21,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -32,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
+	"github.com/fluxcd/pkg/runtime/events"
 	"github.com/fluxcd/pkg/runtime/patch"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 
@@ -82,8 +84,8 @@ other: values
 		}
 
 		hc := sourcev1.HelmChart{}
-		hc.ObjectMeta.Name = hr.GetHelmChartName()
-		hc.ObjectMeta.Namespace = hr.Spec.Chart.GetNamespace(hr.Namespace)
+		hc.ObjectMeta.Name = strings.Join([]string{hr.Namespace, hr.Name}, "-")
+		hc.ObjectMeta.Namespace = hr.Namespace
 
 		resources := []client.Object{
 			valuesConfigMap("values", map[string]string{valuesKey: configData}),
@@ -93,8 +95,8 @@ other: values
 
 		c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&v2.HelmRelease{}).WithObjects(resources...).Build()
 		r := &HelmReleaseReconciler{
-			Client:        c,
-			EventRecorder: &DummyRecorder{},
+			Client:   c,
+			Recorder: events.NewFakeRecorder(32, false),
 		}
 		_, _ = r.reconcileRelease(logr.NewContext(context.TODO(), logr.Discard()), patch.NewSerialPatcher(&hr, c), &hr, nil)
 	})

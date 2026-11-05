@@ -35,17 +35,15 @@ func SetupHelmReconciler(ctx context.Context, mgr ctrl.Manager, adapter *HelmRel
 	// Field owner for the drift-detection dry-run; upstream sets it in its own main.
 	kube.ManagedFieldsManager = adapter.ControllerName
 
-	var eventRecorder *events.Recorder
-	var err error
-
-	if eventRecorder, err = events.NewRecorder(mgr, mgr.GetLogger(), "", adapter.ControllerName); err != nil {
+	eventRecorder, err := events.NewRecorder(mgr.GetLogger(), "", adapter.ControllerName, events.WithManager(mgr))
+	if err != nil {
 		return err
 	}
 
 	hr := &controller.HelmReleaseReconciler{
 		Client:                    mgr.GetClient(),
 		APIReader:                 mgr.GetAPIReader(),
-		EventRecorder:             eventRecorder,
+		Recorder:                  eventRecorder,
 		Metrics:                   adapter.MetricOptions,
 		GetClusterConfig:          ctrl.GetConfig,
 		ClientOpts:                adapter.ClientOpts,
