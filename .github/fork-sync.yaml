@@ -1,0 +1,66 @@
+# How this fork follows the releases of its upstream. Read by tools/fork-sync,
+# which the sync-upstream workflow runs. See "Maintaining the fork up to date" in
+# the README.
+
+upstream: https://github.com/fluxcd/helm-controller.git
+baseBranch: main
+
+# Paths the fork owns: upstream's changes there are not taken, and the rename
+# leaves them alone.
+ownedPaths:
+  # The sync PR's CI runs the workflows with this repository's secrets, before
+  # anyone reviews it, so they are always the fork's: upstream's changes to
+  # them, Go versions included, are taken by hand when CI needs them (see
+  # "Taking an upstream CI change" in the README). Besides the fork's own files
+  # (CODEOWNERS, this file, the sync workflows), upstream's files that stay the
+  # fork's:
+  #   workflows/backport.yaml            deleted: Flux's backport process, needs its bot token
+  #   workflows/release.yaml             deleted: publishes Flux's images, failed on every fork tag
+  #   workflows/scan.yaml                deleted: needs Flux's FOSSA token
+  #   workflows/upgrade-fluxcd-pkg.yaml  kept as it is: needs a bot token
+  #   workflows/sync-labels.yaml         kept as it is: syncs Flux's labels
+  #   labels.yaml                        kept as it is: Flux's backport labels
+  - .github/
+  # The fork's own tooling, which names upstream's API groups on purpose.
+  - tools/
+  # The CRD comes from the renamed API types: make manifests generates
+  # cd.qdrant.io_helmreleases.yaml, and upstream's is deleted. The merge keeps
+  # the fork's version of both, and the adaptation regenerates the renamed one.
+  - config/crd/bases/helm.toolkit.fluxcd.io_helmreleases.yaml
+  - config/crd/bases/cd.qdrant.io_helmreleases.yaml
+
+# Renames Flux's API groups to Qdrant's, so that the CRDs do not collide with a
+# Flux install in the same cluster. Runs after the merge, before the
+# adaptations. Run it by hand with: go -C tools/fork-sync run . --repo ../.. rename
+rename:
+  # git pathspecs: "*" also matches "/", so "*.go" is every Go file.
+  files: ["*.go", "*.yaml", "*.yml", "docs/*.md", PROJECT, "hack/ci/*.sh"]
+  # Applied in order to each file's content.
+  replace:
+    - {from: "group: helm.toolkit.fluxcd.io", to: "group: cd.qdrant.io"}
+    - {from: source.toolkit.fluxcd.io, to: cd.qdrant.io}
+    - {from: finalizers.fluxcd.io, to: finalizers.qdrant.io}
+    - {from: "domain: toolkit.fluxcd.io", to: "domain: qdrant.io"}
+    # The group in PROJECT, as a whole line.
+    - {from: "group: helm\n", to: "group: cd\n"}
+    - {from: helm.toolkit.fluxcd.io, to: cd.qdrant.io}
+    - {from: shortName=hr, to: shortName=qdranthr}
+    # kubectl's short name, in the e2e scripts.
+    - {from: " hr/", to: " qdranthr/"}
+  # Entries of the shortNames lists in the CRDs.
+  shortNames:
+    - {from: hr, to: qdranthr}
+
+# Run in order after the rename. What they change goes into the adaptations
+# commit. A release can need a newer Go than the fork's tooling: the pull
+# request still opens, with a note.
+adaptations:
+  - name: make tidy
+    run: [make, tidy]
+    allowFailure: true
+  # Regenerates the renamed CRD from the API types, with upstream's changes.
+  - name: make manifests
+    run: [make, manifests]
+    allowFailure: true
+
+prBodyTemplate: .github/sync-upstream-pr-body.md
