@@ -4,6 +4,8 @@
 
 | Name                                   | Type          | Description                                                                                                                                                                              |
 |----------------------------------------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `--authorized-artifact-server-spiffe-id` | strings     | SPIFFE ID of an artifact server authorized to serve artifacts to helm-controller. Can be repeated. When set, the artifact fetcher uses SPIFFE mTLS.                                    |
+| `--authorized-event-server-spiffe-id` | strings      | SPIFFE ID of an event server authorized to receive events from helm-controller. Can be repeated. When set, the event recorder uses SPIFFE mTLS.                                        |
 | `--concurrent`                         | int           | The number of concurrent HelmRelease reconciles. (default 4)                                                                                                                             |
 | `--default-kubeconfig-service-account` | string        | Default service account used for kubeconfig.                                                                                                                                             |
 | `--default-service-account`            | string        | Default service account used for impersonation.                                                                                                                                          |
@@ -34,11 +36,58 @@
 | `--requeue-dependency`                 | duration      | The interval at which failing dependencies are reevaluated. (default 30s)                                                                                                                |
 | `--snapshot-digest-algo`               | string        | The algorithm to use to calculate the digest of Helm release storage snapshots. (default "sha256")                                                                                       |
 | `--token-cache-max-size`               | int           | The maximum amount of entries in the LRU cache used for tokens. (default 100, enabled)                                                                                                   |
+| `--spiffe-broker-endpoint`            | string        | The gRPC URL of the SPIFFE Broker endpoint.                                                                                                                                              |
+| `--spiffe-broker-id`                  | strings       | SPIFFE ID of the SPIFFE Broker endpoint. Can be repeated.                                                                                                                                |
 | `--token-cache-max-duration`           | duration      | The maximum duration for which a token would be considered unexpired. This is capped at 1h. (default 1h)                                                                                 |
 | `--watch-all-namespaces`               | boolean       | Watch for custom resources in all namespaces, if set to false it will only watch the runtime namespace. (default true)                                                                   |
 | `--watch-configs-label-selector`       | string        | Watch for ConfigMaps and Secrets with matching labels (default 'reconcile.fluxcd.io/watch=Enabled').                                                                                     |
 | `--watch-label-selector`               | string        | Watch for resources with matching labels e.g. 'sharding.fluxcd.io/key=shard1'.                                                                                                           |
 | `--feature-gates`                      | mapStringBool | A comma separated list of key=value pairs defining the state of experimental features.                                                                                                   |
+
+### SPIFFE mTLS
+
+When at least one of the repeatable flags `--authorized-artifact-server-spiffe-id`
+or `--authorized-event-server-spiffe-id` is set, helm-controller acquires an
+X.509-SVID from the SPIFFE Workload API. The `SPIFFE_ENDPOINT_SOCKET` environment
+variable must point to the Workload API socket.
+
+- `--authorized-artifact-server-spiffe-id` authorizes the given SPIFFE IDs of
+  artifact servers from which helm-controller fetches artifacts. When set, the
+  artifact fetcher uses mTLS.
+- `--authorized-event-server-spiffe-id` authorizes the given SPIFFE IDs of
+  event servers to which helm-controller sends events. When set, the event
+  recorder uses mTLS.
+
+Each traffic type is protected independently. SPIFFE mTLS is transparent to the
+Flux API: the scheme of `.status.artifact.url` does not change.
+
+Each flag value is interpreted as follows:
+
+- `spiffe://<trust domain>/<path>` authorizes exactly that SPIFFE ID.
+- `spiffe://<trust domain>/<path>/` (with a trailing slash) authorizes any
+  SPIFFE ID with that path prefix.
+- `spiffe://<trust domain>` (without a path) authorizes any SPIFFE ID in that
+  trust domain.
+
+Whenever `<trust domain>` equals the special value `self`, helm-controller
+understands it as the trust domain of the controller's own X509-SVID.
+
+Invalid values cause helm-controller to fail at startup.
+
+### SPIFFE Broker API
+
+When `--spiffe-broker-endpoint` and at least one `--spiffe-broker-id` are set,
+helm-controller acquires an X.509-SVID from the SPIFFE Workload API and uses it to
+authenticate to the SPIFFE Broker API. The `SPIFFE_ENDPOINT_SOCKET` environment
+variable must point to the Workload API socket.
+
+The Broker is used to acquire JWT-SVIDs for object identity when a
+ServiceAccount sets `credential.auth.fluxcd.io/provider` to `spiffe`. The
+Broker endpoint is a TCP gRPC target, e.g.
+`dns:///spire-server.spire.svc.cluster.local:8443`.
+
+Each `--spiffe-broker-id` value is interpreted like the SPIFFE IDs used by the
+mTLS flags. Invalid values cause helm-controller to fail at startup.
 
 ### Feature Gates
 
@@ -48,12 +97,11 @@
 | `AdoptLegacyReleases`            | `true`        | Enables the adoption of the historical Helm release based on the status fields from a v2beta1 HelmRelease object. This is enabled by default to support an upgrade path from v2beta1 to v2beta2 without the need to upgrade the Helm release.          |
 | `AllowDNSLookups`                | `false`       | Allows the controller to perform DNS lookups when rendering Helm templates. This is disabled by default, as it can be a security risk.                                                                                                                 |
 | `CacheSecretsAndConfigMaps`      | `false`       | Configures the caching of Secrets and ConfigMaps by the controller-runtime client. When enabled, it will cache both object types, resulting in increased memory usage.                                                                                 |
-| `CancelHealthCheckOnNewRevision` | `false`       | Cancels ongoing health checks when a new revision is detected. Enabling `DefaultToRetryOnFailure` together is recommended, as HelmReleases are more prone to get stuck after the cancellation when using the default retry configuration (no retries). |
+| `CancelHealthCheckOnNewRevision` | `false`       | Cancels ongoing health checks when the desired state changes. Enabling `DefaultToRetryOnFailure` together is recommended, as HelmReleases are more prone to get stuck after the cancellation when using the default retry configuration (no retries). |
 | `DefaultToRetryOnFailure`        | `false`       | Changes the default failure handling strategy from `RemediateOnFailure` to `RetryOnFailure` for both install and upgrade operations when no strategy is explicitly specified.                                                                          |
 | `DirectSourceFetch`              | `false`       | Enables fetching source objects directly from the API server using APIReader, bypassing the controller's cache. This can be useful when immediate consistency is required for source object reads.                                                     |
 | `DisableChartDigestTracking`     | `false`       | Disables the tracking of digest changes for Helm OCI charts. When set to `true`, the controller will not append the OCI digest to the chart version in `Chart.yaml`.                                                                                   |
 | `DisableConfigWatchers`          | `false`       | Disables the watchers for ConfigMaps and Secrets.                                                                                                                                                                                                      |
 | `ExternalArtifact`               | `true`        | Enables support for the [ExternalArtifact](https://github.com/fluxcd/source-controller/blob/main/docs/spec/v1/externalartifacts.md) source type.                                                                                                       |
-| `ObjectLevelWorkloadIdentity`    | `false`       | Enables the use of object-level workload identity for the controller.                                                                                                                                                                                  |
 | `OOMWatch`                       | `false`       | Enables the OOM watcher, which will gracefully shut down the controller when the memory usage exceeds the configured limit. This is disabled by default.                                                                                               |
 | `UseHelm3Defaults`               | `false`       | Restores Helm v3 defaults. When enabled, uses client-side apply for installation, Helm's legacy readiness logic, and the `nohooks` post-render strategy instead of the Helm v4 defaults (server-side apply, kstatus-based health checking, and `combined` post-render strategy).                                              |

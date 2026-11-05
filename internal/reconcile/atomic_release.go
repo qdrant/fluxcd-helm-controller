@@ -26,11 +26,12 @@ import (
 	"helm.sh/helm/v4/pkg/kube"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/conditions"
+	"github.com/fluxcd/pkg/runtime/controller"
+	"github.com/fluxcd/pkg/runtime/events"
 	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/fluxcd/pkg/runtime/patch"
 	"github.com/fluxcd/pkg/ssa/jsondiff"
@@ -113,7 +114,7 @@ var (
 type AtomicRelease struct {
 	patchHelper             *patch.SerialPatcher
 	configFactory           *action.ConfigFactory
-	eventRecorder           record.EventRecorder
+	eventRecorder           events.Recorder
 	strategy                releaseStrategy
 	fieldManager            string
 	disallowedFieldManagers []string
@@ -122,7 +123,7 @@ type AtomicRelease struct {
 
 // NewAtomicRelease returns a new AtomicRelease reconciler configured with the
 // provided values.
-func NewAtomicRelease(patchHelper *patch.SerialPatcher, cfg *action.ConfigFactory, recorder record.EventRecorder, fieldManager string, disallowedFieldManagers []string, defaultToRetryOnFailure bool) *AtomicRelease {
+func NewAtomicRelease(patchHelper *patch.SerialPatcher, cfg *action.ConfigFactory, recorder events.Recorder, fieldManager string, disallowedFieldManagers []string, defaultToRetryOnFailure bool) *AtomicRelease {
 	return &AtomicRelease{
 		patchHelper:             patchHelper,
 		eventRecorder:           recorder,
@@ -219,9 +220,11 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 				conditions.Delete(req.Object, meta.ReconcilingCondition)
 
 				// Always summarize; this ensures we restore transient errors
-				// written to Ready, and updates the observed post-renderers
-				// and common-metadata digests.
+				// written to Ready. The release is in sync with the desired
+				// state, so record the observed post-renderers and
+				// common-metadata digests.
 				summarize(req)
+				observePostRenderers(req)
 
 				return nil
 			}
@@ -244,6 +247,18 @@ func (r *AtomicRelease) Reconcile(ctx context.Context, req *Request) error {
 
 				conditions.Delete(req.Object, meta.ReconcilingCondition)
 				return nil
+			}
+
+			// Do not start a rollback when the object has been enqueued again.
+			// It would fail waiting on the already canceled interrupt context,
+			// so requeue and let the next reconcile decide. An uninstall is
+			// not interrupted and runs as usual.
+			if next.Type() == ReconcilerTypeRemediate &&
+				req.Object.GetActiveRemediation().GetStrategy() == v2.RollbackRemediationStrategy {
+				if enqueued, _ := controller.IsObjectEnqueued(ctx); enqueued {
+					conditions.MarkReconciling(req.Object, meta.ProgressingWithRetryReason, "%s", conditions.GetMessage(req.Object, meta.ReadyCondition))
+					return ErrMustRequeue
+				}
 			}
 
 			// Mark the release as reconciling before we attempt to run the action.
@@ -372,6 +387,22 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 				reason, msgFmt = v2.InstallSucceededReason, fmtInstallSuccess
 			case v2.UpgradeFailedReason:
 				reason, msgFmt = v2.UpgradeSucceededReason, fmtUpgradeSuccess
+			default:
+				// Released may be missing after a failed post-action
+				// condition patch while history was persisted. Derive
+				// the success reason from the last attempted action.
+				action := req.Object.Status.LastAttemptedReleaseAction
+				if action == "" {
+					if cur := req.Object.Status.History.Latest(); cur != nil {
+						action = cur.Action
+					}
+				}
+				switch action {
+				case v2.ReleaseActionInstall:
+					reason, msgFmt = v2.InstallSucceededReason, fmtInstallSuccess
+				case v2.ReleaseActionUpgrade:
+					reason, msgFmt = v2.UpgradeSucceededReason, fmtUpgradeSuccess
+				}
 			}
 			if reason != "" {
 				cur := req.Object.Status.History.Latest()
@@ -442,7 +473,7 @@ func (r *AtomicRelease) actionForState(ctx context.Context, req *Request, state 
 
 		msg := fmt.Sprintf("Cluster state of release %s has drifted from the desired state:\n%s",
 			req.Object.Status.History.Latest().FullReleaseName(), diff.SummarizeDiffSet(state.Diff))
-		r.eventRecorder.Eventf(req.Object, corev1.EventTypeWarning, v2.DriftDetectedReason, "%s", msg)
+		r.eventRecorder.Eventf(req.Object, req.Source, corev1.EventTypeWarning, v2.DriftDetectedReason, v2.ActionDriftDetection.String(), "%s", msg)
 		conditions.MarkTrue(req.Object, v2.DriftedCondition, v2.DriftDetectedReason, "%s", msg)
 
 		if req.Object.GetDriftDetection().GetMode() == v2.DriftDetectionEnabled {

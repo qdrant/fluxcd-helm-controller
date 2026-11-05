@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	godigest "github.com/opencontainers/go-digest"
 	helmchartutil "helm.sh/helm/v4/pkg/chart/common"
 	helmchart "helm.sh/helm/v4/pkg/chart/v2"
 	helmreleasecommon "helm.sh/helm/v4/pkg/release/common"
@@ -192,6 +193,23 @@ func Test_DetermineReleaseState(t *testing.T) {
 			},
 		},
 		{
+			name: "release in uninstalling state",
+			releases: []*helmrelease.Release{
+				testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+					Name:      mockReleaseName,
+					Namespace: mockReleaseNamespace,
+					Version:   1,
+					Status:    helmreleasecommon.StatusUninstalling,
+					Chart:     testutil.BuildChart(),
+				}, testutil.ReleaseWithConfig(map[string]any{"foo": "bar"})),
+			},
+			chart:  testutil.BuildChart(),
+			values: map[string]any{"foo": "bar"},
+			want: ReleaseState{
+				Status: ReleaseStatusLocked,
+			},
+		},
+		{
 			name: "untested release",
 			releases: []*helmrelease.Release{
 				testutil.BuildRelease(&helmrelease.MockReleaseOptions{
@@ -212,6 +230,44 @@ func Test_DetermineReleaseState(t *testing.T) {
 					History: v2.Snapshots{
 						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 					},
+				}
+			},
+			chart:  testutil.BuildChart(),
+			values: map[string]any{"foo": "bar"},
+			want: ReleaseState{
+				Status: ReleaseStatusUntested,
+			},
+		},
+		{
+			name: "incomplete test result",
+			releases: []*helmrelease.Release{
+				testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+					Name:      mockReleaseName,
+					Namespace: mockReleaseNamespace,
+					Version:   1,
+					Status:    helmreleasecommon.StatusDeployed,
+					Chart:     testutil.BuildChart(),
+				}, testutil.ReleaseWithConfig(map[string]any{"foo": "bar"})),
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.Test = &v2.Test{
+					Enable: true,
+				}
+			},
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				cur := release.ObservedToSnapshot(release.ObserveRelease(releases[0]))
+				cur.SetTestHooks(map[string]*v2.TestHookStatus{
+					"passing-test": {
+						Phase: helmrelease.HookPhaseSucceeded.String(),
+					},
+					"never-run-test": {},
+				})
+
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						cur,
+					},
+					LastAttemptedReleaseAction: v2.ReleaseActionUpgrade,
 				}
 			},
 			chart:  testutil.BuildChart(),
@@ -251,6 +307,47 @@ func Test_DetermineReleaseState(t *testing.T) {
 			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
 				cur := release.ObservedToSnapshot(release.ObserveRelease(releases[1]))
 				cur.SetTestHooks(release.TestHooksFromRelease(releases[1]))
+
+				return v2.HelmReleaseStatus{
+					History: v2.Snapshots{
+						cur,
+					},
+					LastAttemptedReleaseAction: v2.ReleaseActionUpgrade,
+				}
+			},
+			chart:  testutil.BuildChart(),
+			values: map[string]any{"foo": "bar"},
+			want: ReleaseState{
+				Status: ReleaseStatusFailed,
+			},
+		},
+		{
+			name: "failed test with unstarted remaining test hooks",
+			releases: []*helmrelease.Release{
+				testutil.BuildRelease(
+					&helmrelease.MockReleaseOptions{
+						Name:      mockReleaseName,
+						Namespace: mockReleaseNamespace,
+						Version:   2,
+						Status:    helmreleasecommon.StatusDeployed,
+						Chart:     testutil.BuildChart(),
+					},
+					testutil.ReleaseWithConfig(map[string]any{"foo": "bar"}),
+				),
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.Test = &v2.Test{
+					Enable: true,
+				}
+			},
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				cur := release.ObservedToSnapshot(release.ObserveRelease(releases[0]))
+				cur.SetTestHooks(map[string]*v2.TestHookStatus{
+					"failure-tests": {
+						Phase: helmrelease.HookPhaseFailed.String(),
+					},
+					"never-run-test": {},
+				})
 
 				return v2.HelmReleaseStatus{
 					History: v2.Snapshots{
@@ -493,7 +590,7 @@ func Test_DetermineReleaseState(t *testing.T) {
 			},
 		},
 		{
-			name: "postRenderers mismatch ignored for processed generation",
+			name: "postRenderers changed for processed generation",
 			releases: []*helmrelease.Release{
 				testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 					Name:      mockReleaseName,
@@ -513,6 +610,37 @@ func Test_DetermineReleaseState(t *testing.T) {
 						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
 					},
 					ObservedPostRenderersDigest: postrender.Digest(digest.Canonical, postRenderers).String(),
+				}
+			},
+			chart:  testutil.BuildChart(),
+			values: map[string]any{"foo": "bar"},
+			want: ReleaseState{
+				Status: ReleaseStatusOutOfSync,
+			},
+		},
+		{
+			name: "postRenderers and commonMetadata unchanged with a different digest algorithm",
+			releases: []*helmrelease.Release{
+				testutil.BuildRelease(&helmrelease.MockReleaseOptions{
+					Name:      mockReleaseName,
+					Namespace: mockReleaseNamespace,
+					Version:   1,
+					Status:    helmreleasecommon.StatusDeployed,
+					Chart:     testutil.BuildChart(),
+				}, testutil.ReleaseWithConfig(map[string]any{"foo": "bar"})),
+			},
+			spec: func(spec *v2.HelmReleaseSpec) {
+				spec.PostRenderers = postRenderers
+				spec.CommonMetadata = commonMetadata
+			},
+			status: func(releases []*helmrelease.Release) v2.HelmReleaseStatus {
+				return v2.HelmReleaseStatus{
+					ObservedGeneration: 2,
+					History: v2.Snapshots{
+						release.ObservedToSnapshot(release.ObserveRelease(releases[0])),
+					},
+					ObservedPostRenderersDigest:  postrender.Digest(godigest.SHA512, postRenderers).String(),
+					ObservedCommonMetadataDigest: postrender.CommonMetadataDigest(godigest.SHA512, commonMetadata).String(),
 				}
 			},
 			chart:  testutil.BuildChart(),
@@ -557,7 +685,7 @@ func Test_DetermineReleaseState(t *testing.T) {
 			},
 		},
 		{
-			name: "commonMetadata mismatch ignored for processed generation",
+			name: "commonMetadata changed for processed generation",
 			releases: []*helmrelease.Release{
 				testutil.BuildRelease(&helmrelease.MockReleaseOptions{
 					Name:      mockReleaseName,
@@ -582,7 +710,7 @@ func Test_DetermineReleaseState(t *testing.T) {
 			chart:  testutil.BuildChart(),
 			values: map[string]any{"foo": "bar"},
 			want: ReleaseState{
-				Status: ReleaseStatusInSync,
+				Status: ReleaseStatusOutOfSync,
 			},
 		},
 	}

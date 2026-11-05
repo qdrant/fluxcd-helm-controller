@@ -1,5 +1,169 @@
 # Changelog
 
+## 1.7.1
+
+**Release date:** 2026-10-26
+
+This patch release fixes a case where a failed upgrade was reported as Ready.
+When an upgrade fails before Helm stores a release and the only change is
+`.spec.postRenderers`, the controller now compares the post-renderers digests on
+every reconcile and retries, instead of reporting the HelmRelease as ready while
+the release in the cluster still runs the previous post-renderers. The digest
+comparison uses the algorithm of the observed digest, so changing
+`--snapshot-digest-algo` no longer triggers upgrades. It also changes how the
+controller reacts when a downloaded artifact does not match the digest
+advertised in the source status: instead of failing until the next retry
+interval, the HelmRelease is marked as not ready with `ArtifactFailed` and
+requeued after `--requeue-dependency` (default 30s), matching the behavior it
+already had for a missing artifact, and the `Could not load chart` warning event
+is no longer emitted for this error.
+
+Fixes:
+- Fix invalid postRenderers change causing release to report Ready
+  [#1640](https://github.com/fluxcd/helm-controller/pull/1640)
+- Requeue on artifact digest mismatch
+  [#1639](https://github.com/fluxcd/helm-controller/pull/1639)
+- Update fluxcd/pkg dependencies
+  [#1636](https://github.com/fluxcd/helm-controller/pull/1636)
+
+## 1.7.0
+
+**Release date:** 2026-10-24
+
+This minor release adds OCIRepository as a chart template for HelmRelease,
+graduates object-level workload identity, now renamed to object identity, and
+introduces SPIFFE mTLS between the controllers.
+
+### Object Identity
+
+Object-level workload identity is now generally available and renamed to object
+identity. Workload identity refers exclusively to identities assigned to Flux
+controllers, while object identity refers to identities assigned to Flux
+objects. The `ObjectLevelWorkloadIdentity` feature gate is retired and the
+feature is always enabled.
+
+Two credential providers can now supply the credential: `kubernetes`, which
+uses the Kubernetes TokenRequest API and was already available, and `spiffe`,
+which fetches a JWT-SVID from the SPIFFE Broker API. The provider is configured
+on the ServiceAccount with `credential.auth.fluxcd.io/provider`, independently
+of the service provider in `.spec.provider`.
+
+See the [object identity documentation](https://fluxcd.io/flux/integrations/object-identity/)
+for the annotation reference.
+
+### Inter-Controller mTLS
+
+This release introduces SPIFFE mTLS for inter-controller communication. Flux
+controllers authenticate each other with X.509-SVIDs, and each traffic type is
+enabled independently by configuring the SPIFFE Workload API socket and the
+SPIFFE IDs that the controller authorizes. See the
+[inter-controller mTLS documentation](https://fluxcd.io/flux/installation/configuration/intercontroller-mtls/)
+for the controller flags and an example configuration.
+
+### HelmRelease
+
+The chart template now supports `OCIRepository` as the `.spec.chart.kind`.
+Instead of referencing an existing source with `.spec.chartRef`, a HelmRelease
+can declare an OCIRepository in `.spec.chart.spec`; the controller creates and
+manages that object in the release namespace and fetches the chart from its
+artifact. Chart version and values are changed atomically, and the release is
+upgraded automatically when the OCIRepository artifact changes.
+
+Remote cluster authentication with `.spec.kubeConfig.configMapRef` is now part
+of object identity: the ServiceAccount named in the referenced ConfigMap can use
+the `kubernetes` or `spiffe` credential provider through its annotations. The
+legacy `audiences` key must be replaced with
+`credential.auth.fluxcd.io/audiences` when using the annotations.
+
+### General updates
+
+The controller is built with Kubernetes 1.37, Go 1.27 and Helm 4.3.1.
+
+Fixes:
+- Sort source requests by dependencies
+  [#1576](https://github.com/fluxcd/helm-controller/pull/1576)
+- Unlock releases stuck in the uninstalling state
+  [#1606](https://github.com/fluxcd/helm-controller/pull/1606)
+- Fix failed rollback after a canceled health check
+  [#1605](https://github.com/fluxcd/helm-controller/pull/1605)
+- Fix nil hook output callback panic
+  [#1604](https://github.com/fluxcd/helm-controller/pull/1604)
+
+Improvements:
+- Add OCIRepository as a chart template
+  [#1600](https://github.com/fluxcd/helm-controller/pull/1600)
+- Add SPIFFE mTLS for the artifact fetcher and event recorder
+  [#1623](https://github.com/fluxcd/helm-controller/pull/1623)
+- Add the `spiffe` credential provider and SPIFFE Broker API
+  [#1626](https://github.com/fluxcd/helm-controller/pull/1626)
+- Retire the `ObjectLevelWorkloadIdentity` feature gate
+  [#1626](https://github.com/fluxcd/helm-controller/pull/1626)
+- Update to Kubernetes 1.37 and Go 1.27
+  [#1591](https://github.com/fluxcd/helm-controller/pull/1591)
+  [#1614](https://github.com/fluxcd/helm-controller/pull/1614)
+- Various dependency updates
+  [#1544](https://github.com/fluxcd/helm-controller/pull/1544)
+  [#1629](https://github.com/fluxcd/helm-controller/pull/1629)
+
+## 1.6.5
+
+**Release date:** 2026-10-01
+
+This patch release stops chart CRDs from being reapplied on every upgrade when
+server-side apply is enabled (the default): the default `Create` policy is meant to
+leave existing CRDs alone, but SSA's upsert semantics were updating them anyway, and
+they are now skipped as with client-side apply. It also recovers HelmReleases
+stranded with a drifted `Ready=Unknown` condition after a failed status patch, keeps
+HelmChart cleanup from getting stuck when the chart is already gone, and corrects the
+documented default CRD upgrade policy (`.spec.upgrade.crds` defaults to `Create`,
+not `Skip`).
+
+Fixes:
+- Fix updating CRDs on upgrades with the Create policy when using SSA
+  [#1589](https://github.com/fluxcd/helm-controller/pull/1589)
+- Recover from drifted Ready/Released status conditions
+  [#1580](https://github.com/fluxcd/helm-controller/pull/1580)
+- Ignore NotFound when deleting HelmChart
+  [#1574](https://github.com/fluxcd/helm-controller/pull/1574)
+
+## 1.6.4
+
+**Release date:** 2026-08-31
+
+This patch release hardens the handling of HelmRelease kubeconfig Secrets:
+kubeconfigs referencing local files are now rejected, credentials and
+certificates must be embedded inline. It also moves the controller back to
+upstream Helm, now at v4.2.4, dropping the temporary Flux fork, and updates
+Kubernetes to 1.36.4.
+
+Fixes:
+- Validate HelmRelease kubeconfigs
+  [#1572](https://github.com/fluxcd/helm-controller/pull/1572)
+
+Improvements:
+- Move v1.6 back to upstream helm
+  [#1565](https://github.com/fluxcd/helm-controller/pull/1565)
+- Update fluxcd/pkg dependencies
+  [#1567](https://github.com/fluxcd/helm-controller/pull/1567)
+  [#1568](https://github.com/fluxcd/helm-controller/pull/1568)
+
+## 1.6.3
+
+**Release date:** 2026-07-23
+
+This patch release fixes empty lines vanishing from rendered chart manifests,
+and releases being marked as tested when their Helm test hooks never ran.
+
+Fixes:
+- Fix vanishing empty lines
+  [#1545](https://github.com/fluxcd/helm-controller/pull/1545)
+- Fix `HasBeenTested` for all corner cases
+  [#1548](https://github.com/fluxcd/helm-controller/pull/1548)
+
+Improvements:
+- ci: parallelize e2e job to speed it up
+  [#1543](https://github.com/fluxcd/helm-controller/pull/1543)
+
 ## 1.6.2
 
 **Release date:** 2026-07-07

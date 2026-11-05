@@ -24,12 +24,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	eventv1 "github.com/fluxcd/pkg/apis/event/v1beta1"
+	eventv1 "github.com/fluxcd/pkg/apis/event/v1"
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/conditions"
+	"github.com/fluxcd/pkg/runtime/events"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 	helmchart "helm.sh/helm/v4/pkg/chart/v2"
 	helmrelease "helm.sh/helm/v4/pkg/release"
 	helmreleasev1 "helm.sh/helm/v4/pkg/release/v1"
@@ -148,8 +149,9 @@ func observeRelease(observed observedReleases) storage.ObserveFunc {
 
 // observeInventory returns a storage.ObserveFunc that builds an inventory
 // from the release manifest and chart CRDs, and stores it in the HelmRelease
-// status.
-func observeInventory(obj *v2.HelmRelease, chart *helmchart.Chart, getter genericclioptions.RESTClientGetter, recorder record.EventRecorder) storage.ObserveFunc {
+// status. The action identifies the Helm operation during which the
+// observation takes place, and is recorded on any event emitted.
+func observeInventory(obj *v2.HelmRelease, src sourcev1.Source, chart *helmchart.Chart, getter genericclioptions.RESTClientGetter, recorder events.Recorder, action v2.Action) storage.ObserveFunc {
 	return func(rls helmrelease.Releaser) {
 		rlsTyped, ok := rls.(*helmreleasev1.Release)
 		if !ok {
@@ -158,13 +160,13 @@ func observeInventory(obj *v2.HelmRelease, chart *helmchart.Chart, getter generi
 
 		restCfg, err := getter.ToRESTConfig()
 		if err != nil {
-			recorder.Eventf(obj, corev1.EventTypeWarning, v2.InventoryBuildFailedReason,
+			recorder.Eventf(obj, src, corev1.EventTypeWarning, v2.InventoryBuildFailedReason, action.String(),
 				"failed to build inventory for %s/%s: %s", obj.GetNamespace(), obj.GetName(), err.Error())
 			return
 		}
 		c, err := client.New(restCfg, client.Options{})
 		if err != nil {
-			recorder.Eventf(obj, corev1.EventTypeWarning, v2.InventoryBuildFailedReason,
+			recorder.Eventf(obj, src, corev1.EventTypeWarning, v2.InventoryBuildFailedReason, action.String(),
 				"failed to build inventory for %s/%s: %s", obj.GetNamespace(), obj.GetName(), err.Error())
 			return
 		}
@@ -172,17 +174,17 @@ func observeInventory(obj *v2.HelmRelease, chart *helmchart.Chart, getter generi
 		inv := inventory.New()
 		warnings, err := inventory.AddManifest(inv, rlsTyped.Manifest, rlsTyped.Namespace, c)
 		if err != nil {
-			recorder.Eventf(obj, corev1.EventTypeWarning, v2.InventoryBuildFailedReason,
+			recorder.Eventf(obj, src, corev1.EventTypeWarning, v2.InventoryBuildFailedReason, action.String(),
 				"failed to build inventory for %s/%s: %s", obj.GetNamespace(), obj.GetName(), err.Error())
 			return
 		}
 		if len(warnings) > 0 {
-			recorder.Eventf(obj, corev1.EventTypeWarning, v2.NamespaceCheckSkippedReason,
+			recorder.Eventf(obj, src, corev1.EventTypeWarning, v2.NamespaceCheckSkippedReason, action.String(),
 				"%s", strings.Join(warnings, "; "))
 		}
 		if chart != nil {
 			if err := inventory.AddCRDs(inv, chart); err != nil {
-				recorder.Eventf(obj, corev1.EventTypeWarning, v2.InventoryBuildFailedReason,
+				recorder.Eventf(obj, src, corev1.EventTypeWarning, v2.InventoryBuildFailedReason, action.String(),
 					"failed to build inventory for %s/%s: %s", obj.GetNamespace(), obj.GetName(), err.Error())
 				return
 			}
@@ -207,9 +209,6 @@ func observeInventory(obj *v2.HelmRelease, chart *helmchart.Chart, getter generi
 // tests are not enabled, and excluding it when failures must be ignored.
 //
 // If Ready=True, any Stalled condition is removed.
-//
-// The ObservedPostRenderersDigest and ObservedCommonMetadataDigest are
-// updated to reflect the current spec.
 func summarize(req *Request) {
 	var sumConds = []string{v2.RemediatedCondition, v2.ReleasedCondition}
 	if req.Object.GetTest().Enable && !req.Object.GetTest().IgnoreFailures {
@@ -259,9 +258,19 @@ func summarize(req *Request) {
 		Message:            conds[0].Message,
 		ObservedGeneration: req.Object.Generation,
 	})
+}
 
-	// Update the observed post-renderers and common-metadata digests to
-	// reflect the current spec.
+// observePostRenderers records the observed post-renderers and common-metadata
+// digests on the status of the given Request.Object, reflecting that the
+// current specification has been applied to the release.
+//
+// It must only be called once the current specification has been successfully
+// applied, e.g. after a successful install or upgrade, or when the release is
+// observed to be in sync with the desired state. Recording the digests after a
+// failed action that did not store a release would make the controller believe
+// the specification has been applied, causing the release to be reported as
+// in-sync without ever retrying the action.
+func observePostRenderers(req *Request) {
 	req.Object.Status.ObservedPostRenderersDigest = ""
 	if req.Object.Spec.PostRenderers != nil {
 		req.Object.Status.ObservedPostRenderersDigest = postrender.Digest(digest.Canonical, req.Object.Spec.PostRenderers).String()

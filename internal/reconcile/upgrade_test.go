@@ -33,14 +33,15 @@ import (
 	helmdriver "helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	eventv1 "github.com/fluxcd/pkg/apis/event/v1beta1"
+	eventv1 "github.com/fluxcd/pkg/apis/event/v1"
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/chartutil"
 	"github.com/fluxcd/pkg/runtime/conditions"
+	"github.com/fluxcd/pkg/runtime/events"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	"github.com/fluxcd/helm-controller/internal/action"
@@ -497,7 +498,7 @@ func TestUpgrade_Reconcile(t *testing.T) {
 				cfg.Driver = tt.driver(cfg.Driver)
 			}
 
-			recorder := new(record.FakeRecorder)
+			recorder := new(events.FakeRecorder)
 			got := NewUpgrade(cfg, recorder, false).Reconcile(context.TODO(), &Request{
 				Object: obj,
 				Chart:  tt.chart,
@@ -644,16 +645,21 @@ func TestUpgrade_Reconcile_withSubchartWithCRDs(t *testing.T) {
 				g.Expect(store.Create(r)).To(Succeed())
 			}
 
-			// Delete any prior CRD.
+			// Delete any prior CRD and wait for it to be gone, as CRD
+			// deletion is asynchronous and the upgrade must not observe a
+			// terminating CRD (the Create policy skips existing CRDs).
 			subChartCRD := &apiextensionsv1.CustomResourceDefinition{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "crontabs.stable.example.com",
 				},
 			}
 			_ = testEnv.Delete(context.TODO(), subChartCRD)
+			g.Eventually(func() bool {
+				return apierrors.IsNotFound(testEnv.Get(context.TODO(), client.ObjectKeyFromObject(subChartCRD), subChartCRD))
+			}, time.Minute).Should(BeTrue(), "timed out waiting for CRD to be deleted")
 
 			chart := testutil.BuildChartWithSubchartWithCRD()
-			recorder := new(record.FakeRecorder)
+			recorder := new(events.FakeRecorder)
 			got := NewUpgrade(cfg, recorder, false).Reconcile(context.TODO(), &Request{
 				Object: obj,
 				Chart:  chart,
@@ -724,7 +730,7 @@ func TestUpgrade_failure(t *testing.T) {
 	t.Run("records failure", func(t *testing.T) {
 		g := NewWithT(t)
 
-		recorder := testutil.NewFakeRecorder(10, false)
+		recorder := events.NewFakeRecorder(10, true)
 		r := &Upgrade{
 			eventRecorder: recorder,
 		}
@@ -743,6 +749,7 @@ func TestUpgrade_failure(t *testing.T) {
 			{
 				Type:    corev1.EventTypeWarning,
 				Reason:  v2.UpgradeFailedReason,
+				Action:  v2.ActionHelmUpgrade.String(),
 				Message: expectMsg,
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -759,7 +766,7 @@ func TestUpgrade_failure(t *testing.T) {
 	t.Run("records failure with logs", func(t *testing.T) {
 		g := NewWithT(t)
 
-		recorder := testutil.NewFakeRecorder(10, false)
+		recorder := events.NewFakeRecorder(10, false)
 		r := &Upgrade{
 			eventRecorder: recorder,
 		}
@@ -795,7 +802,7 @@ func TestUpgrade_success(t *testing.T) {
 	t.Run("records success", func(t *testing.T) {
 		g := NewWithT(t)
 
-		recorder := testutil.NewFakeRecorder(10, false)
+		recorder := events.NewFakeRecorder(10, true)
 		r := &Upgrade{
 			eventRecorder: recorder,
 		}
@@ -816,6 +823,7 @@ func TestUpgrade_success(t *testing.T) {
 			{
 				Type:    corev1.EventTypeNormal,
 				Reason:  v2.UpgradeSucceededReason,
+				Action:  v2.ActionHelmUpgrade.String(),
 				Message: expectMsg,
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -831,7 +839,7 @@ func TestUpgrade_success(t *testing.T) {
 	t.Run("clears failures if retry strategy is configured", func(t *testing.T) {
 		g := NewWithT(t)
 
-		recorder := testutil.NewFakeRecorder(10, false)
+		recorder := events.NewFakeRecorder(10, false)
 		r := &Upgrade{
 			eventRecorder: recorder,
 		}
@@ -857,7 +865,7 @@ func TestUpgrade_success(t *testing.T) {
 	t.Run("records success with TestSuccess=False", func(t *testing.T) {
 		g := NewWithT(t)
 
-		recorder := testutil.NewFakeRecorder(10, false)
+		recorder := events.NewFakeRecorder(10, false)
 		r := &Upgrade{
 			eventRecorder: recorder,
 		}

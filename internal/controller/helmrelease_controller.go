@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,13 +34,13 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	apierrutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/rest"
-	kuberecorder "k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -56,13 +57,13 @@ import (
 	runtimeClient "github.com/fluxcd/pkg/runtime/client"
 	"github.com/fluxcd/pkg/runtime/conditions"
 	helper "github.com/fluxcd/pkg/runtime/controller"
+	"github.com/fluxcd/pkg/runtime/events"
 	"github.com/fluxcd/pkg/runtime/jitter"
 	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/fluxcd/pkg/runtime/object"
 	"github.com/fluxcd/pkg/runtime/patch"
+	fluxbroker "github.com/fluxcd/pkg/spiffe/broker"
 	"github.com/fluxcd/pkg/ssa"
-
-	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2"
 	intacl "github.com/fluxcd/helm-controller/internal/acl"
@@ -72,6 +73,7 @@ import (
 	"github.com/fluxcd/helm-controller/internal/kube"
 	"github.com/fluxcd/helm-controller/internal/loader"
 	intreconcile "github.com/fluxcd/helm-controller/internal/reconcile"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1"
 )
 
 // +kubebuilder:rbac:groups=cd.qdrant.io,resources=helmreleases,verbs=get;list;watch;create;update;patch;delete
@@ -86,11 +88,12 @@ import (
 // HelmReleaseReconciler reconciles a HelmRelease object.
 type HelmReleaseReconciler struct {
 	client.Client
-	kuberecorder.EventRecorder
+	events.Recorder
 	helper.Metrics
 
 	// Kubernetes configuration
 
+<<<<<<< HEAD
 	FieldManager            string
 	DisallowedFieldManagers []string
 	DefaultServiceAccount   string
@@ -100,12 +103,25 @@ type HelmReleaseReconciler struct {
 	APIReader               client.Reader
 	TokenCache              *cache.TokenCache
 	LeaderElection          *bool
+=======
+	FieldManager                    string
+	DisallowedFieldManagers         []string
+	DefaultServiceAccount           string
+	DefaultKubeConfigServiceAccount string
+	GetClusterConfig                func() (*rest.Config, error)
+	ClientOpts                      runtimeClient.Options
+	KubeConfigOpts                  runtimeClient.KubeConfigOptions
+	APIReader                       client.Reader
+	TokenCache                      *cache.TokenCache
+	SPIFFEBroker                    fluxbroker.Interface
+>>>>>>> refs/upstream-tags/v1.7.1
 
 	// Retry and requeue configuration
 
 	DependencyRequeueInterval time.Duration
 	ArtifactFetchRetries      int
 	ArtifactFetchTimeout      time.Duration
+	ArtifactServerTLSConfig   *tls.Config
 
 	// Feature gates
 
@@ -208,7 +224,7 @@ func (r *HelmReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		conditions.MarkFalse(obj, meta.ReadyCondition, meta.InvalidCELExpressionReason, "%s", errMsg)
 		conditions.MarkStalled(obj, meta.InvalidCELExpressionReason, "%s", errMsg)
 		obj.Status.ObservedGeneration = obj.Generation
-		r.Eventf(obj, corev1.EventTypeWarning, meta.InvalidCELExpressionReason, "%s", err.Error())
+		r.Eventf(obj, nil, corev1.EventTypeWarning, meta.InvalidCELExpressionReason, v2.ActionHealthCheck.String(), "%s", err.Error())
 		return ctrl.Result{}, reconcile.TerminalError(err)
 	}
 
@@ -249,7 +265,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context,
 				errMsg := fmt.Sprintf("%s: %v", terminalErrorMessage, err)
 				conditions.MarkFalse(obj, meta.ReadyCondition, meta.InvalidCELExpressionReason, "%s", errMsg)
 				conditions.MarkStalled(obj, meta.InvalidCELExpressionReason, "%s", errMsg)
-				r.Eventf(obj, corev1.EventTypeWarning, meta.InvalidCELExpressionReason, "%s", err.Error())
+				r.Eventf(obj, nil, corev1.EventTypeWarning, meta.InvalidCELExpressionReason, v2.ActionCheckDependencies.String(), "%s", err.Error())
 				return ctrl.Result{}, err
 			}
 
@@ -257,7 +273,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context,
 			msg := fmt.Sprintf("dependencies do not meet ready condition (%s): retrying in %s",
 				err.Error(), r.DependencyRequeueInterval.String())
 			conditions.MarkFalse(obj, meta.ReadyCondition, v2.DependencyNotReadyReason, "%s", err)
-			r.Eventf(obj, corev1.EventTypeNormal, v2.DependencyNotReadyReason, "%s", err.Error())
+			r.Eventf(obj, nil, corev1.EventTypeNormal, v2.DependencyNotReadyReason, v2.ActionCheckDependencies.String(), "%s", err.Error())
 			log.Info(msg)
 
 			// Exponential backoff would cause execution to be prolonged too much,
@@ -279,7 +295,9 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context,
 			conditions.MarkStalled(obj, aclv1.AccessDeniedReason, "%s", err)
 			conditions.MarkFalse(obj, meta.ReadyCondition, aclv1.AccessDeniedReason, "%s", err)
 			conditions.Delete(obj, meta.ReconcilingCondition)
-			r.Eventf(obj, corev1.EventTypeWarning, aclv1.AccessDeniedReason, "%s", err.Error())
+			// The source could not be fetched, so fall back to the chartRef to
+			// still attach a related object to the event.
+			r.Eventf(obj, sourceRefObject(obj), corev1.EventTypeWarning, aclv1.AccessDeniedReason, v2.ActionResolveSource.String(), "%s", err.Error())
 
 			// Recovering from this is not possible without a restart of the
 			// controller or a change of spec, both triggering a new
@@ -318,7 +336,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context,
 		obj.Spec.ValuesFrom...)
 	if err != nil {
 		conditions.MarkFalse(obj, meta.ReadyCondition, "ValuesError", "%s", err)
-		r.Eventf(obj, corev1.EventTypeWarning, "ValuesError", "%s", err.Error())
+		r.Eventf(obj, source, corev1.EventTypeWarning, "ValuesError", v2.ActionResolveValues.String(), "%s", err.Error())
 		return ctrl.Result{}, err
 	}
 	// Remove any stale corresponding Ready=False condition with Unknown.
@@ -327,17 +345,24 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context,
 	}
 
 	// Load chart from artifact.
-	loadedChart, err := loader.SecureLoadChartFromURL(loader.NewRetryableHTTPClient(ctx, r.ArtifactFetchRetries, r.ArtifactFetchTimeout), source.GetArtifact().URL, source.GetArtifact().Digest)
+	loadedChart, err := loader.SecureLoadChartFromURL(ctx, source.GetArtifact().URL, source.GetArtifact().Digest,
+		r.ArtifactFetchRetries, r.ArtifactFetchTimeout, r.ArtifactServerTLSConfig)
 	if err != nil {
-		if errors.Is(err, loader.ErrFileNotFound) {
-			msg := fmt.Sprintf("Source not ready: artifact not found. Retrying in %s", r.DependencyRequeueInterval.String())
+		// Requeue at the dependency interval if the artifact is not found or
+		// its digest doesn't match, as the source status may not be updated yet.
+		if errors.Is(err, loader.ErrFileNotFound) || errors.Is(err, loader.ErrDigestMismatch) {
+			cause := "artifact not found"
+			if errors.Is(err, loader.ErrDigestMismatch) {
+				cause = "artifact digest changed"
+			}
+			msg := fmt.Sprintf("Source not ready: %s. Retrying in %s", cause, r.DependencyRequeueInterval.String())
 			conditions.MarkFalse(obj, meta.ReadyCondition, v2.ArtifactFailedReason, "%s", msg)
 			log.Info(msg)
 			return ctrl.Result{RequeueAfter: r.DependencyRequeueInterval}, errWaitForDependency
 		}
 
 		conditions.MarkFalse(obj, meta.ReadyCondition, v2.ArtifactFailedReason, "Could not load chart: %s", err)
-		r.Eventf(obj, corev1.EventTypeWarning, v2.ArtifactFailedReason, "%s", err.Error())
+		r.Eventf(obj, source, corev1.EventTypeWarning, v2.ArtifactFailedReason, v2.ActionResolveSource.String(), "%s", err.Error())
 		return ctrl.Result{}, err
 	}
 	// Remove any stale corresponding Ready=False condition with Unknown.
@@ -376,7 +401,7 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context,
 
 	if reason, changed := action.ReleaseTargetChanged(obj, loadedChart.Name()); changed && (reason != action.TargetChartName || obj.GetUpgrade().GetChartNameChangeStrategy() == v2.ChartNameChangeStrategyReinstall) {
 		log.Info(fmt.Sprintf("release target configuration changed (%s): running uninstall for current release", reason))
-		if err = r.reconcileUninstall(ctx, getter, obj); err != nil && !errors.Is(err, intreconcile.ErrNoLatest) {
+		if err = r.reconcileUninstall(ctx, getter, obj, source); err != nil && !errors.Is(err, intreconcile.ErrNoLatest) {
 			return ctrl.Result{}, err
 		}
 		obj.Status.ClearHistory()
@@ -419,8 +444,9 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context,
 	}
 
 	// Off we go!
-	if err = intreconcile.NewAtomicRelease(patchHelper, cfg, r.EventRecorder, r.FieldManager, r.DisallowedFieldManagers, r.DefaultToRetryOnFailure).Reconcile(ctx, &intreconcile.Request{
+	if err = intreconcile.NewAtomicRelease(patchHelper, cfg, r.Recorder, r.FieldManager, r.DisallowedFieldManagers, r.DefaultToRetryOnFailure).Reconcile(ctx, &intreconcile.Request{
 		Object: obj,
+		Source: source,
 		Chart:  loadedChart,
 		Values: values,
 	}); err != nil {
@@ -430,8 +456,8 @@ func (r *HelmReleaseReconciler) reconcileRelease(ctx context.Context,
 			conditions.MarkFalse(obj, meta.ReadyCondition, meta.HealthCheckCanceledReason,
 				"New reconciliation triggered by %s/%s/%s", qes.Kind, qes.Namespace, qes.Name)
 			log.Info("New reconciliation triggered, canceling health checks", "trigger", qes)
-			r.Eventf(obj, corev1.EventTypeNormal, meta.HealthCheckCanceledReason,
-				"Health checks canceled due to new reconciliation triggered by %s/%s/%s",
+			r.Eventf(obj, source, corev1.EventTypeNormal, meta.HealthCheckCanceledReason,
+				v2.ActionHealthCheck.String(), "Health checks canceled due to new reconciliation triggered by %s/%s/%s",
 				qes.Kind, qes.Namespace, qes.Name)
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -558,7 +584,7 @@ func (r *HelmReleaseReconciler) reconcileReleaseDeletion(ctx context.Context, ob
 	}
 
 	// Attempt to uninstall the release.
-	if err = r.reconcileUninstall(ctx, getter, obj); err != nil && !errors.Is(err, intreconcile.ErrNoLatest) {
+	if err = r.reconcileUninstall(ctx, getter, obj, nil); err != nil && !errors.Is(err, intreconcile.ErrNoLatest) {
 		return err
 	}
 	if err == nil {
@@ -576,12 +602,12 @@ func (r *HelmReleaseReconciler) reconcileReleaseDeletion(ctx context.Context, ob
 // Effectively, this means that the HelmChart resource is created, updated or
 // deleted based on the state of the HelmRelease.
 func (r *HelmReleaseReconciler) reconcileChartTemplate(ctx context.Context, obj *v2.HelmRelease) error {
-	return intreconcile.NewHelmChartTemplate(r.Client, r.EventRecorder, r.FieldManager).Reconcile(ctx, &intreconcile.Request{
+	return intreconcile.NewHelmChartTemplate(r.Client, r.Recorder, r.FieldManager).Reconcile(ctx, &intreconcile.Request{
 		Object: obj,
 	})
 }
 
-func (r *HelmReleaseReconciler) reconcileUninstall(ctx context.Context, getter genericclioptions.RESTClientGetter, obj *v2.HelmRelease) error {
+func (r *HelmReleaseReconciler) reconcileUninstall(ctx context.Context, getter genericclioptions.RESTClientGetter, obj *v2.HelmRelease, source sourcev1.Source) error {
 	// Construct config factory for current release first to validate
 	// storage configuration before building the resource manager.
 	cfg, err := action.NewConfigFactory(getter,
@@ -604,7 +630,7 @@ func (r *HelmReleaseReconciler) reconcileUninstall(ctx context.Context, getter g
 	cfg.NewResourceManager = resourceManager
 
 	// Run uninstall.
-	return intreconcile.NewUninstall(cfg, r.EventRecorder).Reconcile(ctx, &intreconcile.Request{Object: obj})
+	return intreconcile.NewUninstall(cfg, r.Recorder).Reconcile(ctx, &intreconcile.Request{Object: obj, Source: source})
 }
 
 // checkDependencies checks if the dependencies of the current HelmRelease are ready.
@@ -722,17 +748,21 @@ func (r *HelmReleaseReconciler) buildRESTClientGetter(ctx context.Context, obj *
 	var err error
 	switch {
 	case kc.ConfigMapRef != nil && kc.SecretRef == nil:
-		var opts []auth.Option
-		if r.TokenCache != nil {
-			involvedObject := cache.InvolvedObject{
-				Kind:      v2.HelmReleaseKind,
-				Name:      obj.GetName(),
-				Namespace: obj.GetNamespace(),
-				Operation: cache.OperationReconcile,
-			}
-			opts = append(opts, auth.WithCache(*r.TokenCache, involvedObject))
+		var opts []authutils.Option
+		if r.DefaultKubeConfigServiceAccount != "" {
+			opts = append(opts, authutils.WithDefaultServiceAccount(r.DefaultKubeConfigServiceAccount))
 		}
-		restConfig, err = authutils.GetRESTConfig(ctx, *kc, obj.GetNamespace(), r.Client, opts...)
+		authOpts := []auth.Option{
+			auth.WithObject(v2.GroupVersion.Group, v2.HelmReleaseKind, obj),
+			auth.WithSPIFFEBroker(r.SPIFFEBroker),
+		}
+		if r.TokenCache != nil {
+			authOpts = append(authOpts,
+				auth.WithCache(*r.TokenCache),
+				auth.WithCacheOperation(cache.OperationReconcile))
+		}
+		opts = append(opts, authutils.WithAuthOptions(authOpts...))
+		restConfig, err = authutils.GetRESTConfig(ctx, *kc, r.Client, opts...)
 	case kc.SecretRef != nil && kc.ConfigMapRef == nil:
 		secretName := types.NamespacedName{
 			Namespace: obj.GetNamespace(),
@@ -762,12 +792,46 @@ func (r *HelmReleaseReconciler) getSourceClient() client.Reader {
 	return r.Client
 }
 
-// getSource returns the source object containing the HelmChart, either by
-// using the chartRef in the spec, or by looking up the HelmChart
-// referenced in the status object.
+// sourceRefObject returns a minimal object for the source referenced by the
+// HelmRelease's chartRef, applying the same defaults as
+// GetHelmChartReference. It is used as the related object of an event when the
+// source itself could not be resolved, for example because access to it was
+// denied.
+func sourceRefObject(obj *v2.HelmRelease) runtime.Object {
+	ref := obj.Spec.ChartRef
+	if ref == nil {
+		return nil
+	}
+	kind := ref.Kind
+	if kind == "" {
+		kind = sourcev1.HelmChartKind
+	}
+	apiVersion := ref.APIVersion
+	if apiVersion == "" {
+		apiVersion = sourcev1.GroupVersion.String()
+	}
+	namespace := ref.Namespace
+	if namespace == "" {
+		namespace = obj.GetNamespace()
+	}
+	return &metav1.PartialObjectMetadata{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       kind,
+			APIVersion: apiVersion,
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ref.Name,
+			Namespace: namespace,
+		},
+	}
+}
+
+// getSource returns the source object containing the Helm chart, either by
+// using the chartRef in the spec, or by looking up the reference in the
+// status object.
 // It returns the source object or an error.
 func (r *HelmReleaseReconciler) getSource(ctx context.Context, obj *v2.HelmRelease) (sourcev1.Source, error) {
-	var name, namespace string
+	var ref *v2.HelmChartReference
 	if obj.HasChartRef() {
 		if obj.Spec.ChartRef.Kind == sourcev1.OCIRepositoryKind {
 			return r.getSourceFromOCIRef(ctx, obj)
@@ -775,65 +839,63 @@ func (r *HelmReleaseReconciler) getSource(ctx context.Context, obj *v2.HelmRelea
 		if obj.Spec.ChartRef.Kind == sourcev1.ExternalArtifactKind {
 			return r.getSourceFromExternalArtifact(ctx, obj)
 		}
-		name, namespace = obj.Spec.ChartRef.Name, obj.Spec.ChartRef.Namespace
-		if namespace == "" {
-			namespace = obj.GetNamespace()
-		}
+		ref = obj.GetHelmChartReference()
 	} else {
-		namespace, name = obj.Status.GetHelmChart()
+		ref = obj.Status.GetHelmChartReference()
+	}
+	if ref == nil {
+		return nil, fmt.Errorf("no Helm chart reference found")
 	}
 
-	chartRef := types.NamespacedName{Namespace: namespace, Name: name}
-
-	if err := intacl.AllowsAccessTo(obj, sourcev1.HelmChartKind, chartRef); err != nil {
+	if err := intacl.AllowsAccessTo(obj, ref); err != nil {
 		return nil, err
 	}
 
+	if ref.Kind == sourcev1.OCIRepositoryKind {
+		or := sourcev1.OCIRepository{}
+		if err := r.getSourceClient().Get(ctx, ref.GetObjectKey(), &or); err != nil {
+			return nil, err
+		}
+		return &or, nil
+	}
+
 	hc := sourcev1.HelmChart{}
-	if err := r.getSourceClient().Get(ctx, chartRef, &hc); err != nil {
+	if err := r.getSourceClient().Get(ctx, ref.GetObjectKey(), &hc); err != nil {
 		return nil, err
 	}
 	return &hc, nil
 }
 
 func (r *HelmReleaseReconciler) getSourceFromOCIRef(ctx context.Context, obj *v2.HelmRelease) (sourcev1.Source, error) {
-	name, namespace := obj.Spec.ChartRef.Name, obj.Spec.ChartRef.Namespace
-	if namespace == "" {
-		namespace = obj.GetNamespace()
-	}
-	ociRepoRef := types.NamespacedName{Namespace: namespace, Name: name}
+	ref := obj.GetHelmChartReference()
 
-	if err := intacl.AllowsAccessTo(obj, sourcev1.OCIRepositoryKind, ociRepoRef); err != nil {
+	if err := intacl.AllowsAccessTo(obj, ref); err != nil {
 		return nil, err
 	}
 
 	or := sourcev1.OCIRepository{}
-	if err := r.getSourceClient().Get(ctx, ociRepoRef, &or); err != nil {
+	if err := r.getSourceClient().Get(ctx, ref.GetObjectKey(), &or); err != nil {
 		return nil, err
 	}
 	return &or, nil
 }
 
 func (r *HelmReleaseReconciler) getSourceFromExternalArtifact(ctx context.Context, obj *v2.HelmRelease) (sourcev1.Source, error) {
-	name, namespace := obj.Spec.ChartRef.Name, obj.Spec.ChartRef.Namespace
-	if namespace == "" {
-		namespace = obj.GetNamespace()
-	}
-	sourceRef := types.NamespacedName{Namespace: namespace, Name: name}
+	ref := obj.GetHelmChartReference()
 
-	if err := intacl.AllowsAccessTo(obj, sourcev1.ExternalArtifactKind, sourceRef); err != nil {
+	if err := intacl.AllowsAccessTo(obj, ref); err != nil {
 		return nil, err
 	}
 
 	// Check if ExternalArtifact kind is allowed.
 	if obj.Spec.ChartRef.Kind == sourcev1.ExternalArtifactKind && !r.AllowExternalArtifact {
-		return nil, acl.AccessDeniedError(
-			fmt.Sprintf("can't access '%s/%s/%s', %s feature gate is disabled",
-				obj.Spec.ChartRef.Kind, namespace, name, helper.FeatureGateExternalArtifact))
+		msg := fmt.Sprintf("can't access '%s', %s feature gate is disabled",
+			ref, helper.FeatureGateExternalArtifact)
+		return nil, acl.AccessDeniedError(msg)
 	}
 
 	or := sourcev1.ExternalArtifact{}
-	if err := r.getSourceClient().Get(ctx, sourceRef, &or); err != nil {
+	if err := r.getSourceClient().Get(ctx, ref.GetObjectKey(), &or); err != nil {
 		return nil, err
 	}
 	return &or, nil
