@@ -22,7 +22,7 @@ CREATED_REMOTE=false
 
 NS=helm-system
 CONTROLLER=helm-controller
-JWT_OBJ_TYPE=helmreleases.helm.toolkit.fluxcd.io
+JWT_OBJ_TYPE=helmreleases.cd.qdrant.io
 
 log()  { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
@@ -335,7 +335,7 @@ done
 log "Deploying the source artifact"
 ##############################################################################
 kubectl -n "${APP_NS}" apply -f - >/dev/null <<EOF
-apiVersion: source.toolkit.fluxcd.io/v1
+apiVersion: cd.qdrant.io/v1
 kind: HelmRepository
 metadata:
   name: podinfo
@@ -388,7 +388,7 @@ for tenant in a b; do
             [ "${scope}" = cross ] && target_tenant="${other}"
             name="hr-${provider}-${tenant}-${scope}"
             kubectl -n "${APP_NS}" apply -f - >/dev/null <<EOF
-apiVersion: helm.toolkit.fluxcd.io/v2
+apiVersion: cd.qdrant.io/v2
 kind: HelmRelease
 metadata:
   name: ${name}
@@ -442,7 +442,7 @@ for tenant in a b; do
         wait_ready "${name}"
         kubectl --context "kind-${REMOTE_CLUSTER}" -n "tenant-${tenant}" \
             wait --for=condition=Available deployment \
-            -l "helm.toolkit.fluxcd.io/name=${name}" --timeout=5m
+            -l "cd.qdrant.io/name=${name}" --timeout=5m
         info "${name} applied to tenant-${tenant}"
         expect_denied "hr-${provider}-${tenant}-cross"
     done

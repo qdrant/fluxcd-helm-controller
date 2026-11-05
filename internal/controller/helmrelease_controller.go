@@ -93,17 +93,6 @@ type HelmReleaseReconciler struct {
 
 	// Kubernetes configuration
 
-<<<<<<< HEAD
-	FieldManager            string
-	DisallowedFieldManagers []string
-	DefaultServiceAccount   string
-	GetClusterConfig        func() (*rest.Config, error)
-	ClientOpts              runtimeClient.Options
-	KubeConfigOpts          runtimeClient.KubeConfigOptions
-	APIReader               client.Reader
-	TokenCache              *cache.TokenCache
-	LeaderElection          *bool
-=======
 	FieldManager                    string
 	DisallowedFieldManagers         []string
 	DefaultServiceAccount           string
@@ -114,7 +103,7 @@ type HelmReleaseReconciler struct {
 	APIReader                       client.Reader
 	TokenCache                      *cache.TokenCache
 	SPIFFEBroker                    fluxbroker.Interface
->>>>>>> refs/upstream-tags/v1.7.1
+	LeaderElection                  *bool
 
 	// Retry and requeue configuration
 

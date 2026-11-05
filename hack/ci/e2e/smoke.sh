@@ -3,9 +3,9 @@
 echo ">>> Test samples"
 kubectl create ns samples
 kubectl -n samples apply -f config/samples
-kubectl -n samples wait hr/podinfo-ocirepository --for=condition=ready --timeout=4m
-kubectl -n samples wait hr/podinfo-gitrepository --for=condition=ready --timeout=4m
-kubectl -n samples wait hr/podinfo-helmrepository --for=condition=ready --timeout=4m
+kubectl -n samples wait qdranthr/podinfo-ocirepository --for=condition=ready --timeout=4m
+kubectl -n samples wait qdranthr/podinfo-gitrepository --for=condition=ready --timeout=4m
+kubectl -n samples wait qdranthr/podinfo-helmrepository --for=condition=ready --timeout=4m
 kubectl delete ns samples
 echo ">>> Run smoke test"
 kubectl -n helm-system apply -f config/testdata/podinfo
