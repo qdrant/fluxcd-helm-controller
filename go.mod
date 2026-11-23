@@ -23,12 +23,12 @@ replace (
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/fluxcd/cli-utils v1.4.0
-	github.com/fluxcd/helm-controller/api v1.7.1
+	github.com/fluxcd/helm-controller/api v1.7.2
 	github.com/fluxcd/pkg/apis/acl v0.12.0
 	github.com/fluxcd/pkg/apis/event v0.32.0
 	github.com/fluxcd/pkg/apis/kustomize v1.23.0
 	github.com/fluxcd/pkg/apis/meta v1.38.0
-	github.com/fluxcd/pkg/auth v0.66.0
+	github.com/fluxcd/pkg/auth v0.66.2
 	github.com/fluxcd/pkg/cache v0.19.0
 	github.com/fluxcd/pkg/chartutil v1.35.0
 	github.com/fluxcd/pkg/http/fetch v0.30.1
